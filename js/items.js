@@ -1337,15 +1337,15 @@ defItem({ id: 'dummy', name: 'Dummy', desc: 'A grey crash-test dummy. Feels pain
   ghost(ctx, flip) { drawDummyIcon(ctx, flip ? -1 : 1); }, icon(ctx) { drawDummyIcon(ctx, 1); } });
 function drawDummyIcon(ctx, f) {
   ctx.save(); ctx.scale(f, 1);
-  const g = SKIN;
-  fillRR(ctx, -0.06, 0.08, 0.12, 0.42, 0.05, g.back); fillRR(ctx, -0.075, 0.47, 0.15, 0.47, 0.06, g.back); fillRR(ctx, -0.06, 0.0, 0.26, 0.08, 0.03, '#2b2e33');
-  fillRR(ctx, -0.055, 0.84, 0.1, 0.66, 0.05, g.back);
-  fillRR(ctx, -0.17, 1.2, 0.34, 0.34, 0.12, g.mid); fillRR(ctx, -0.15, 0.935, 0.3, 0.27, 0.1, g.mid);
-  fillRR(ctx, -0.01, 0.08, 0.12, 0.42, 0.05, g.front); fillRR(ctx, -0.035, 0.47, 0.15, 0.47, 0.06, g.front); fillRR(ctx, -0.01, 0.0, 0.26, 0.08, 0.03, '#33363c');
-  fillCircle(ctx, 0, 1.665, 0.118, g.head);
-  fillCircle(ctx, 0.058, 1.69, 0.013, '#121316');
+  const g = SKIN, r = 0.012;
+  fillRR(ctx, -0.062, 0.07, 0.124, 0.43, r, g.back); fillRR(ctx, -0.075, 0.465, 0.15, 0.47, r, g.back); fillRR(ctx, -0.075, 0.0, 0.26, 0.08, 0.01, '#2b2e33');
+  fillRR(ctx, -0.055, 0.825, 0.1, 0.35, r, g.back); fillRR(ctx, -0.055, 1.17, 0.11, 0.33, r, g.back);
+  fillRR(ctx, -0.17, 1.2, 0.34, 0.34, r, g.mid); fillRR(ctx, -0.15, 0.935, 0.3, 0.27, r, g.mid);
+  fillRR(ctx, -0.022, 0.07, 0.124, 0.43, r, g.front); fillRR(ctx, -0.035, 0.465, 0.15, 0.47, r, g.front); fillRR(ctx, -0.022, 0.0, 0.26, 0.08, 0.01, '#33363c');
+  fillRR(ctx, -0.1, 1.545, 0.2, 0.24, r, g.head);
+  fillRR(ctx, 0.046, 1.678, 0.024, 0.024, 0.003, '#121316');
   drawMarker(ctx, -0.015, 1.67, 0.034);
-  fillRR(ctx, 0.0, 0.84, 0.1, 0.66, 0.05, g.front);
+  fillRR(ctx, 0.0, 0.825, 0.1, 0.35, r, g.front); fillRR(ctx, -0.005, 1.17, 0.11, 0.33, r, g.front);
   ctx.restore();
 }
 

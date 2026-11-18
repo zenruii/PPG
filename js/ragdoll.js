@@ -7,7 +7,7 @@
 const PART_DEFS = [
   { n: 'chest',   hw: 0.17,  hh: 0.17,  cx: 0, cy: 1.37,  layer: 2, hp: 100, label: 'chest', density: 115 },
   { n: 'abdomen', hw: 0.15,  hh: 0.135, cx: 0, cy: 1.07,  parent: 'chest', jy: 1.205, lim: [-0.3, 0.7], tq: 550, layer: 2, hp: 100, sever: 75, label: 'abdomen' },
-  { n: 'head',    r: 0.118,             cx: 0, cy: 1.665, parent: 'chest', jy: 1.545, lim: [-0.7, 0.5], tq: 90, layer: 3, hp: 70, sever: 30, label: 'head', density: 105 },
+  { n: 'head',    hw: 0.1,   hh: 0.12,  cx: 0, cy: 1.665, parent: 'chest', jy: 1.545, lim: [-0.7, 0.5], tq: 90, layer: 3, hp: 70, sever: 30, label: 'head', density: 105 },
   { n: 'uarmB',   hw: 0.055, hh: 0.165, cx: 0, cy: 1.335, parent: 'chest', jy: 1.49, lim: [-1.3, 3.0], tq: 80, layer: 0, hp: 55, sever: 26, label: 'left upper arm' },
   { n: 'larmB',   hw: 0.05,  hh: 0.175, cx: 0, cy: 1.0,   parent: 'uarmB', jy: 1.175, lim: [0, 2.6], tq: 50, layer: 0, hp: 45, sever: 20, label: 'left forearm' },
   { n: 'thighB',  hw: 0.075, hh: 0.235, cx: 0, cy: 0.70,  parent: 'abdomen', jy: 0.935, lim: [-0.5, 2.1], tq: 700, layer: 1, hp: 80, sever: 38, label: 'left thigh' },
@@ -783,8 +783,8 @@ class Dummy extends Entity {
     if (!p.path) {
       p.path = new Path2D();
       if (d.r) p.path.arc(0, 0, d.r, 0, TAU);
-      else if (p.n.startsWith('foot')) roundRectPath(p.path, -d.hw, -d.hh, d.hw * 2, d.hh * 2 + 0.01, f > 0 ? [0.02, 0.05, 0.02, 0.02] : [0.05, 0.02, 0.02, 0.02]);
-      else roundRectPath(p.path, -d.hw, -d.hh, d.hw * 2, d.hh * 2, Math.min(d.hw, d.hh) * 0.85);
+      else if (p.n.startsWith('foot')) roundRectPath(p.path, -d.hw, -d.hh, d.hw * 2, d.hh * 2 + 0.01, f > 0 ? [0.008, 0.02, 0.006, 0.006] : [0.02, 0.008, 0.006, 0.006]);
+      else roundRectPath(p.path, -d.hw, -d.hh, d.hw * 2, d.hh * 2, 0.012);
     }
     const path = p.path;
     const col = this.partColor(p);
@@ -859,13 +859,13 @@ class Dummy extends Entity {
       ctx.beginPath(); ctx.moveTo(f * 0.055, -0.055); ctx.lineTo(f * 0.085, -0.055); ctx.stroke();
     } else if (this.pain > 35 || this.flinch > 0) {
       ctx.beginPath(); ctx.moveTo(ex - f * 0.018, ey + 0.016); ctx.lineTo(ex + f * 0.012, ey); ctx.lineTo(ex - f * 0.018, ey - 0.016); ctx.stroke();
-      ctx.beginPath(); ctx.ellipse(f * 0.075, -0.058, 0.016, 0.022 * clamp(this.pain / 60, 0.5, 1.2), 0, 0, TAU); ctx.fill();
+      { const mh = 0.04 * clamp(this.pain / 60, 0.5, 1.2); ctx.fillRect(f * 0.075 - 0.015, -0.058 - mh / 2, 0.03, mh); }
     } else if (this.airT > 0.2) {
-      ctx.beginPath(); ctx.arc(ex, ey, 0.02, 0, TAU); ctx.fill();
-      ctx.fillStyle = '#d8dce0'; ctx.beginPath(); ctx.arc(ex + f * 0.005, ey + 0.005, 0.006, 0, TAU); ctx.fill();
-      ctx.fillStyle = '#121316'; ctx.beginPath(); ctx.ellipse(f * 0.075, -0.06, 0.014, 0.02, 0, 0, TAU); ctx.fill();
+      ctx.fillRect(ex - 0.018, ey - 0.018, 0.036, 0.036);
+      ctx.fillStyle = '#d8dce0'; ctx.fillRect(ex + f * 0.002 - 0.005, ey + 0.002, 0.01, 0.01);
+      ctx.fillStyle = '#121316'; ctx.fillRect(f * 0.075 - 0.013, -0.08, 0.026, 0.04);
     } else {
-      ctx.beginPath(); ctx.arc(ex, ey, 0.013, 0, TAU); ctx.fill();
+      ctx.fillRect(ex - 0.013, ey - 0.013, 0.026, 0.026);
       ctx.beginPath(); ctx.moveTo(f * 0.055, -0.055); ctx.lineTo(f * 0.09, -0.05); ctx.stroke();
     }
     ctx.lineCap = 'butt';

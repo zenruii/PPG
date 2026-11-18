@@ -610,7 +610,7 @@ function drawBodyMap(cv, d) {
   ctx.scale(s, -s);
   // front-facing schematic: left/right limbs spread
   const lay = {
-    head: [0, 1.665, 0.118], chest: [0, 1.37, 0.17, 0.17], abdomen: [0, 1.07, 0.15, 0.135],
+    head: [0, 1.665, 0.1, 0.12], chest: [0, 1.37, 0.17, 0.17], abdomen: [0, 1.07, 0.15, 0.135],
     uarmF: [-0.24, 1.335, 0.055, 0.165], larmF: [-0.26, 1.0, 0.05, 0.175], uarmB: [0.24, 1.335, 0.055, 0.165], larmB: [0.26, 1.0, 0.05, 0.175],
     thighF: [-0.085, 0.7, 0.07, 0.235], shinF: [-0.09, 0.285, 0.06, 0.215], footF: [-0.11, 0.04, 0.08, 0.04],
     thighB: [0.085, 0.7, 0.07, 0.235], shinB: [0.09, 0.285, 0.06, 0.215], footB: [0.11, 0.04, 0.08, 0.04],
@@ -620,7 +620,7 @@ function drawBodyMap(cv, d) {
     if (!L) continue;
     ctx.beginPath();
     if (L.length === 3) ctx.arc(L[0], L[1], L[2], 0, TAU);
-    else roundRectPath(ctx, L[0] - L[2], L[1] - L[3], L[2] * 2, L[3] * 2, Math.min(L[2], L[3]) * 0.8);
+    else roundRectPath(ctx, L[0] - L[2], L[1] - L[3], L[2] * 2, L[3] * 2, 0.012);
     const c = healthColor(p, d);
     ctx.fillStyle = p.detached ? 'rgba(80,84,92,0.25)' : c + '55';
     ctx.fill();
