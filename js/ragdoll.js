@@ -81,11 +81,66 @@ class Dummy extends Entity {
     if (this.injuries.length > 40) this.injuries.pop();
   }
 
+  /* place every part into a pose (relative joint angles, facing-right convention), chest at (x, y) */
+  pose(x, y, rel, baseAngle = 0) {
+    const f = this.f;
+    const ch = this.parts.chest;
+    ch.body.setTransform(v2(x, y), baseAngle);
+    const queue = [ch];
+    while (queue.length) {
+      const par = queue.shift();
+      for (const c of par.children) {
+        const j = c.joint;
+        if (!j || j._dead) continue;
+        const ca = par.body.getAngle() + f * (rel[c.n] || 0);
+        const wa = par.body.getWorldPoint(j.getLocalAnchorA());
+        const lb = j.getLocalAnchorB();
+        const cs = Math.cos(ca), sn = Math.sin(ca);
+        c.body.setTransform(v2(wa.x - (lb.x * cs - lb.y * sn), wa.y - (lb.x * sn + lb.y * cs)), ca);
+        queue.push(c);
+      }
+    }
+    for (const p of this.partList) { p.body.setLinearVelocity(v2(0, 0)); p.body.setAngularVelocity(0); p.pv = null; }
+    this.pvCom = null;
+  }
+  lowestY() {
+    let m = 1e9;
+    for (const p of this.partList) {
+      const fx = p.body.getFixtureList(), sh = fx.getShape();
+      for (let i = 0; i < sh.m_count; i++) m = Math.min(m, p.body.getWorldPoint(sh.m_vertices[i]).y);
+    }
+    return m;
+  }
+  translate(dx, dy) {
+    for (const p of this.partList) { const q = p.body.getPosition(); p.body.setTransform(v2(q.x + dx, q.y + dy), p.body.getAngle()); }
+  }
+
+  /* seated crew posture (in a vehicle) */
+  sit(s) {
+    const P = this.parts, f = this.f;
+    const seatA = this.seat.getBodyA().getAngle();
+    const t = G.time + this.phase;
+    const k = 0.45 * s;
+    this.servo(P.chest.body, seatA - 0.05 * f, 120 * k, 6);
+    this.drive(P.abdomen, f * 0.12, 300 * k);
+    this.drive(P.head, f * (0.05 + 0.15 * Math.sin(t * 0.4)), 60 * k, 8);
+    for (const sd of ['F', 'B']) {
+      this.drive(P['thigh' + sd], f * 1.45, 400 * k);
+      this.drive(P['shin' + sd], f * -1.0, 350 * k);
+      this.drive(P['foot' + sd], angNorm(seatA - P['shin' + sd].body.getAngle()), 80 * k);
+      if (this.clutching !== sd) {
+        this.drive(P['uarm' + sd], f * (0.95 + 0.08 * Math.sin(t * 1.3 + (sd === 'F' ? 0 : 2))), 50 * k, 8);
+        this.drive(P['larm' + sd], f * 0.9, 35 * k, 8);
+      }
+    }
+  }
+
   /* ---------------- status helpers ---------------- */
   get statusText() {
     if (!this.alive) return 'Dead';
     if (this.cons < 0.3) return this.brain < 35 ? 'Comatose' : 'Unconscious';
     if (this.partList.some((p) => p.burning > 0)) return 'Burning';
+    if (this.state === 'seated') return this.vehicle ? 'Crewing ' + this.vehicle.short : 'Seated';
     if (this.state === 'stand') return this.pain > 40 ? 'Hurt' : 'Standing';
     if (this.state === 'getup') return 'Getting up';
     if (this.pain > 50) return 'In agony';
@@ -332,7 +387,10 @@ class Dummy extends Entity {
       if (this.deadT < 1.6) this.spasm(dt); else this.limp(this.deadT < 3 ? 3 : 1.4);
       return;
     }
-    if (this.cons < 0.35) { this.state = 'fallen'; this.fallenT = 0; this.limp(2.6); return; }
+    if (this.cons < 0.35) { this.state = this.seat ? 'seated' : 'fallen'; this.fallenT = 0; this.limp(2.6); return; }
+    if (this.seat && this.seat._dead) { this.seat = null; if (typeof setCrewLayer === 'function') setCrewLayer(this, false); }
+    if (this.seat) { this.state = 'seated'; const s0 = this.strength(); this.sit(s0); this.clutch(s0); return; }
+    if (this.state === 'seated') { this.state = 'fallen'; this.fallenT = 0; }
 
     switch (this.state) {
       case 'stand':

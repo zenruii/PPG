@@ -191,7 +191,7 @@ const Combat = (() => {
         else Sound.play(m.sound === 'glass' ? 'glass' : 'bullethit', 0.35, 0.04);
         if (ud.onShot) ud.onShot(b, h.p, dmg, o);
         if (!ud.noStain && fmat !== 'glass') addHole(b, h.p, o.caliber || 1);
-        energy -= m.resist * (o.apMul || 1);
+        energy -= m.resist * (o.apMul || 1) + (ud.armor ? ud.armor * 3 : 0);
         if (ud.isGround) energy = -1;
       }
       if (energy <= 0) { end = h.p; break; }
@@ -301,8 +301,8 @@ const Combat = (() => {
       let dx = c.x - x, dy = c.y - y;
       let d = Math.hypot(dx, dy);
       if (d > R) continue;
-      const blocker = rayFirst(v2(x, y), c, (fx) => fx.getBody() !== b && fx.getBody().isStatic() && !fx.getBody().getUserData().isGround);
-      const occl = blocker ? 0.3 : 1;
+      const blocker = rayFirst(v2(x, y), c, (fx) => { const ob = fx.getBody(); if (ob === b) return false; const u = ob.getUserData(); return (ob.isStatic() && !u.isGround) || (u.armor != null && u.tankPart && entOf(ob) !== entOf(b)); });
+      const occl = !blocker ? 1 : blocker.body.isStatic() ? 0.3 : 0.06;
       const fall = 1 - d / R;
       const k = fall * fall * occl;
       if (b.isStatic()) { if (ud.onBlast) ud.onBlast(b, k * (o.structMul || 1)); continue; }
@@ -418,6 +418,6 @@ const Combat = (() => {
 
   function reset() { impales.length = 0; projectiles.length = 0; firePools.length = 0; burning.clear(); G.lights.length = 0; }
 
-  return { tipWouldImpale, update, onImpact, handleContact, fireBullet, fireBeam, explode, ignite, addFirePool, addProjectile, impale, releaseAll, reset,
+  return { addHole, tipWouldImpale, update, onImpact, handleContact, fireBullet, fireBeam, explode, ignite, addFirePool, addProjectile, impale, releaseAll, reset,
     get projectiles() { return projectiles; }, get firePools() { return firePools; }, get impales() { return impales; }, burning };
 })();

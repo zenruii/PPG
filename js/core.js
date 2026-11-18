@@ -27,7 +27,7 @@ const MAT = {
   energy:  { density: 1,   friction: 0,    restitution: 0,    resist: 0,  soft: false, sound: 'none' },
 };
 
-const CAT = { DEFAULT: 0x0001, FLESH: 0x0002, DEBRIS: 0x0004, ITEM: 0x0008 };
+const CAT = { DEFAULT: 0x0001, FLESH: 0x0002, DEBRIS: 0x0004, ITEM: 0x0008, CREW: 0x0010 };
 
 const BLOOD = ['#9b30d0', '#8526b8', '#7a1fa8', '#6c1896'];
 const BLOOD_DARK = '#3b0b52';
@@ -42,7 +42,7 @@ const G = {
   nextId: 1, groupCounter: 1, shake: 0,
   lifeView: false, selected: null, hover: null,
   stainBodies: new Set(),
-  ropes: [], pins: [],
+  ropes: [], pins: [], vehicle: null,
 };
 
 function defer(fn, delay = 0) { G.deferred.push({ t: G.time + delay, fn }); }
@@ -162,7 +162,7 @@ function resetWorld() {
   G.ground.getUserData().stains.length = 0;
   for (const b of G.stainBodies) if (!b._dead) b.getUserData().stains.length = 0;
   G.stainBodies.clear();
-  G.ropes.length = 0; G.pins.length = 0;
+  G.ropes.length = 0; G.pins.length = 0; G.vehicle = null;
   Combat.reset();
   G.selected = null;
 }

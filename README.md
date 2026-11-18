@@ -24,6 +24,7 @@ Runs entirely in the browser. No build step needed to play.
 | Pause, slow motion, health overlay | `P`, `T`, `L` |
 | Spawn a dummy at the cursor | `G` |
 | Spawn the last item you picked from the catalog again | `R` |
+| Drive a tank | Right-click it, then `A` `D` drive, `W` `S` aim the gun, `Space` fire, `Esc` get out |
 | Clear blood and debris | `C` |
 | Delete under cursor | `X` / `Del` |
 
@@ -54,6 +55,8 @@ Broken legs mean no standing. Severe pain causes shock, and a damaged brain mean
 
 **Gadgets.** Life syringe (heals and revives), adrenaline, sedative, sentry turret, hanging lamp.
 
+**Tanks.** M4 Sherman, Tiger I and Leopard 2, each spawned with a crew of four. Hulls are bolted together from separate armour plates on a frame with sprung road wheels and treads, so plates dent, get holed and fall off. Every plate has a real thickness (Sherman 63 mm sloped glacis, Tiger 100 mm flat front, Leopard 600 mm composite), and shells compare their penetration against the plate's thickness and impact angle. A penetrating shell explodes inside, can set the crew on fire and sometimes cooks off the ammunition and throws the turret off. Shallow hits ricochet. A tank needs its driver to move and a gunner to fire.
+
 **Props and buildings.** Crates (breakable, flammable), steel crate, plank, brick, concrete block, steel ball, tyre, table, chair, glass pane (shatters into sharp shards), ramp, fixed platform, wall, spike strip, a destructible house and a 12 m watchtower.
 
 ## Project layout
@@ -64,6 +67,7 @@ js/core.js          world, materials, entities, contact handling, particles, sim
 js/ragdoll.js       dummy anatomy, balance controller, physiology and injuries
 js/combat.js        bullets, beams, blades, impalement, explosions, fire
 js/items.js         every spawnable item, the turret, house and tower
+js/tanks.js         plate-built tanks, crews, armour penetration and driving
 js/render.js        camera and canvas rendering
 js/ui.js            input, tools, catalog, inspector
 js/audio.js         synthesized sound effects (WebAudio, no assets)

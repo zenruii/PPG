@@ -37,6 +37,9 @@ const Input = {
         if (score > bestScore) { bestScore = score; best = { fx, body: b, ent: e }; }
       }
     });
+    if (!best && !o.dynamic) {
+      for (const e of G.entities) if (e.kind === 'tank' && !e.dead && e.containsPoint(wx, wy)) return { body: e.core, ent: e, fx: e.core.getFixtureList() };
+    }
     return best;
   },
 
@@ -99,6 +102,7 @@ const Input = {
   activateEnt(e) {
     if (!e || e.dead) return;
     if (e.kind === 'dummy') { G.selected = e; return; }
+    if (e.kind === 'tank') { G.vehicle = G.vehicle === e ? null : e; return; }
     if (!e.activatable) return;
     e.activate();
     this.holdEnt = e;
@@ -288,14 +292,16 @@ const Input = {
     if (this.placing && (c === 'KeyF')) { this.placeFlip = !this.placeFlip; return; }
     switch (c) {
       case 'Space': case 'KeyF': {
+        if (G.vehicle && !G.vehicle.dead && !this.drag) { G.vehicle.fire(); break; }
         const tgt = this.drag ? this.drag.ent : (this.hoverEnt || null);
-        if (tgt) this.activateEnt(tgt);
+        if (tgt && tgt.kind === 'tank') tgt.fire();
+        else if (tgt) this.activateEnt(tgt);
         break;
       }
       case 'KeyR': this.spawnArmed(); break;
       case 'KeyQ': if (this.placing) this.placeAng += 0.26; break;
       case 'KeyE': if (this.placing) this.placeAng -= 0.26; break;
-      case 'Escape': if (this.placing) UI.setPlacing(null); else if (this.ropeStart) this.ropeStart = null; else G.selected = null; break;
+      case 'Escape': if (G.vehicle) G.vehicle = null; else if (this.placing) UI.setPlacing(null); else if (this.ropeStart) this.ropeStart = null; else G.selected = null; break;
       case 'KeyP': UI.togglePause(); break;
       case 'KeyT': UI.toggleSlow(); break;
       case 'KeyG': {
@@ -322,10 +328,16 @@ const Input = {
   frame(dt) {
     // keyboard camera
     const sp = 600 / Cam.z * dt * 1.5;
-    if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) Cam.tx -= sp;
-    if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) Cam.tx += sp;
-    if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) Cam.ty += sp;
-    if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) Cam.ty -= sp;
+    const veh = G.vehicle && !G.vehicle.dead ? G.vehicle : null;
+    if (G.vehicle && !veh) G.vehicle = null;
+    if ((!veh && this.keys.has('KeyA')) || this.keys.has('ArrowLeft')) Cam.tx -= sp;
+    if ((!veh && this.keys.has('KeyD')) || this.keys.has('ArrowRight')) Cam.tx += sp;
+    if ((!veh && this.keys.has('KeyW')) || this.keys.has('ArrowUp')) Cam.ty += sp;
+    if ((!veh && this.keys.has('KeyS')) || this.keys.has('ArrowDown')) Cam.ty -= sp;
+    if (veh && !veh.core._dead && !this.pan && !(this.rmb && this.rmb.moved)) {
+      const c = veh.core.getWorldCenter();
+      Cam.tx += (c.x + veh.f * 2 - Cam.tx) * Math.min(1, dt * 2.5);
+    }
     Cam.ty = clamp(Cam.ty, -4, 60);
     this.setWorldFromScreen();
     const hit = this.over && !this.drag && !this.pan ? this.pick(this.wx, this.wy) : null;
@@ -548,14 +560,15 @@ const UI = {
   updateHint() {
     let h;
     const k = (s) => `<kbd>${s}</kbd>`;
-    if (Input.placing) h = `<b>${Input.placing.name}</b> ${k('Click')} place · ${k('Shift')}+click place several · ${k('F')} flip · ${k('Q')}${k('E')} rotate · ${k('Esc')} cancel`;
+    if (G.vehicle && !G.vehicle.dead && !Input.placing) h = `<b>Driving ${G.vehicle.short}</b> ${k('A')}${k('D')} drive · ${k('W')}${k('S')} aim gun · ${k('Space')} fire · ${k('Esc')} get out · ${G.vehicle.statusText}`;
+    else if (Input.placing) h = `<b>${Input.placing.name}</b> ${k('Click')} place · ${k('Shift')}+click place several · ${k('F')} flip · ${k('Q')}${k('E')} rotate · ${k('Esc')} cancel`;
     else if (Input.drag) {
       const e = Input.drag.ent;
       h = e.kind === 'dummy' ? `<b>${e.name}</b> release to throw` : `<b>${e.name}</b> ${e.activatable ? k('Space') + ' use · ' : ''}${k('Q')}${k('E')} or wheel to rotate · release to throw`;
     } else if (Input.ropeStart) h = `Click a second point to tie the rope · ${k('Esc')} cancel`;
     else if (Input.hoverEnt && Input.hoverEnt.kind !== 'structure') {
       const e = Input.hoverEnt;
-      h = e.kind === 'dummy' ? `<b>${e.name}</b> · ${e.statusText} · right-click to inspect` : `<b>${e.name}</b>${e.activatable ? ' · right-click or ' + k('Space') + ' to use' : ''}`;
+      h = e.kind === 'tank' ? `<b>${e.name}</b> · ${e.statusText} · right-click to drive` : e.kind === 'dummy' ? `<b>${e.name}</b> · ${e.statusText} · right-click to inspect` : `<b>${e.name}</b>${e.activatable ? ' · right-click or ' + k('Space') + ' to use' : ''}`;
     } else h = TOOLS.find((t) => t.id === Input.tool).hint + (this.coarse ? ' · Pinch to zoom' : ` · Right-drag to pan · Wheel to zoom`);
     if (this.armed && !Input.placing && !Input.drag && !this.coarse) h += ` · ${k('R')} spawn ${this.armed.name}`;
     if (h !== this.lastHint) { this.el.hint.innerHTML = h; this.lastHint = h; }

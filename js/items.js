@@ -13,6 +13,7 @@ const CATS = [
   { id: 'scifi', name: 'Sci-fi' },
   { id: 'misc', name: 'Gadgets' },
   { id: 'props', name: 'Props' },
+  { id: 'vehicles', name: 'Vehicles' },
   { id: 'structures', name: 'Buildings' },
 ];
 function defItem(d) { ITEMS.push(d); ITEM[d.id] = d; return d; }
