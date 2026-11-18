@@ -57,6 +57,9 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .item span { font: 500 12px var(--f-body); color: var(--fg); padding: 0 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .item:hover { border-color: #3d4450; }
 .item.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.item { position: relative; }
+.item.armed:not(.on) { border-color: rgba(242,194,48,0.55); }
+.item.armed::after { content: "R"; position: absolute; top: 10px; right: 10px; font: 600 10px var(--f-mono); padding: 1px 5px; border-radius: 4px; background: var(--accent); color: var(--accent-ink); }
 #count { padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--line); font: 500 11px var(--f-mono); color: var(--mute); font-variant-numeric: tabular-nums; }
 
 /* top bar */
@@ -182,6 +185,7 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
           <div class="row"><span>Pause</span><span><kbd>P</kbd></span></div>
           <div class="row"><span>Slow motion on / off</span><span><kbd>T</kbd></span></div>
           <div class="row"><span>Spawn a dummy at the cursor</span><span><kbd>G</kbd></span></div>
+          <div class="row"><span>Spawn the last picked item again</span><span><kbd>R</kbd></span></div>
           <div class="row"><span>Health overlay</span><span><kbd>L</kbd></span></div>
           <div class="row"><span>Clear blood &amp; debris</span><span><kbd>C</kbd></span></div>
         </div>
@@ -4276,6 +4280,14 @@ const Input = {
     this.holdEnt = e;
   },
 
+  /* R: drop another copy of the last catalog item at the cursor */
+  spawnArmed() {
+    const d = UI.armed;
+    if (!d) return;
+    spawnItem(d.id, this.wx, d.ground ? 0 : this.wy, this.placeFlip, this.placeAng);
+    Sound.play('spawn', 0.5);
+  },
+
   spawnPlacing(x, y) {
     const d = this.placing;
     const e = spawnItem(d.id, x, d.ground ? 0 : y, this.placeFlip, this.placeAng);
@@ -4456,6 +4468,7 @@ const Input = {
         if (tgt) this.activateEnt(tgt);
         break;
       }
+      case 'KeyR': this.spawnArmed(); break;
       case 'KeyQ': if (this.placing) this.placeAng += 0.26; break;
       case 'KeyE': if (this.placing) this.placeAng -= 0.26; break;
       case 'Escape': if (this.placing) UI.setPlacing(null); else if (this.ropeStart) this.ropeStart = null; else G.selected = null; break;
@@ -4647,7 +4660,11 @@ const UI = {
       cv.width = 168; cv.height = 96;
       b.appendChild(cv);
       const label = document.createElement('span'); label.textContent = d.name; b.appendChild(label);
-      b.onclick = () => { this.setPlacing(this.placingId === d.id ? null : d); if (window.innerWidth < 760) this.el.catalog.classList.remove('open'); };
+      b.onclick = () => {
+        this.armed = d;
+        this.setPlacing(this.placingId === d.id ? null : d);
+        if (window.innerWidth < 760) this.el.catalog.classList.remove('open');
+      };
       box.appendChild(b);
       drawThumb(cv, d);
     }
@@ -4658,7 +4675,12 @@ const UI = {
     Input.placeAng = 0;
     this.markPlacing();
   },
-  markPlacing() { for (const b of this.el.items.children) b.classList.toggle('on', b.dataset.id === this.placingId); },
+  markPlacing() {
+    for (const b of this.el.items.children) {
+      b.classList.toggle('on', b.dataset.id === this.placingId);
+      b.classList.toggle('armed', !!this.armed && b.dataset.id === this.armed.id);
+    }
+  },
   setTool(id) {
     Input.tool = id; Input.ropeStart = null;
     this.setPlacing(null);
@@ -4711,6 +4733,7 @@ const UI = {
       const e = Input.hoverEnt;
       h = e.kind === 'dummy' ? `<b>${e.name}</b> · ${e.statusText} · right-click to inspect` : `<b>${e.name}</b>${e.activatable ? ' · right-click or ' + k('Space') + ' to use' : ''}`;
     } else h = TOOLS.find((t) => t.id === Input.tool).hint + (this.coarse ? ' · Pinch to zoom' : ` · Right-drag to pan · Wheel to zoom`);
+    if (this.armed && !Input.placing && !Input.drag && !this.coarse) h += ` · ${k('R')} spawn ${this.armed.name}`;
     if (h !== this.lastHint) { this.el.hint.innerHTML = h; this.lastHint = h; }
     if (this.coarse) { const t = Input.drag ? Input.drag.ent : Input.lastEnt; this.el.use.disabled = !(t && !t.dead && t.activatable); }
   },

@@ -58,6 +58,9 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .item span { font: 500 12px var(--f-body); color: var(--fg); padding: 0 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .item:hover { border-color: #3d4450; }
 .item.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.item { position: relative; }
+.item.armed:not(.on) { border-color: rgba(242,194,48,0.55); }
+.item.armed::after { content: "R"; position: absolute; top: 10px; right: 10px; font: 600 10px var(--f-mono); padding: 1px 5px; border-radius: 4px; background: var(--accent); color: var(--accent-ink); }
 #count { padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--line); font: 500 11px var(--f-mono); color: var(--mute); font-variant-numeric: tabular-nums; }
 
 /* top bar */
@@ -185,6 +188,7 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
           <div class="row"><span>Pause</span><span><kbd>P</kbd></span></div>
           <div class="row"><span>Slow motion on / off</span><span><kbd>T</kbd></span></div>
           <div class="row"><span>Spawn a dummy at the cursor</span><span><kbd>G</kbd></span></div>
+          <div class="row"><span>Spawn the last picked item again</span><span><kbd>R</kbd></span></div>
           <div class="row"><span>Health overlay</span><span><kbd>L</kbd></span></div>
           <div class="row"><span>Clear blood &amp; debris</span><span><kbd>C</kbd></span></div>
         </div>

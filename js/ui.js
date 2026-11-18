@@ -104,6 +104,14 @@ const Input = {
     this.holdEnt = e;
   },
 
+  /* R: drop another copy of the last catalog item at the cursor */
+  spawnArmed() {
+    const d = UI.armed;
+    if (!d) return;
+    spawnItem(d.id, this.wx, d.ground ? 0 : this.wy, this.placeFlip, this.placeAng);
+    Sound.play('spawn', 0.5);
+  },
+
   spawnPlacing(x, y) {
     const d = this.placing;
     const e = spawnItem(d.id, x, d.ground ? 0 : y, this.placeFlip, this.placeAng);
@@ -284,6 +292,7 @@ const Input = {
         if (tgt) this.activateEnt(tgt);
         break;
       }
+      case 'KeyR': this.spawnArmed(); break;
       case 'KeyQ': if (this.placing) this.placeAng += 0.26; break;
       case 'KeyE': if (this.placing) this.placeAng -= 0.26; break;
       case 'Escape': if (this.placing) UI.setPlacing(null); else if (this.ropeStart) this.ropeStart = null; else G.selected = null; break;
@@ -475,7 +484,11 @@ const UI = {
       cv.width = 168; cv.height = 96;
       b.appendChild(cv);
       const label = document.createElement('span'); label.textContent = d.name; b.appendChild(label);
-      b.onclick = () => { this.setPlacing(this.placingId === d.id ? null : d); if (window.innerWidth < 760) this.el.catalog.classList.remove('open'); };
+      b.onclick = () => {
+        this.armed = d;
+        this.setPlacing(this.placingId === d.id ? null : d);
+        if (window.innerWidth < 760) this.el.catalog.classList.remove('open');
+      };
       box.appendChild(b);
       drawThumb(cv, d);
     }
@@ -486,7 +499,12 @@ const UI = {
     Input.placeAng = 0;
     this.markPlacing();
   },
-  markPlacing() { for (const b of this.el.items.children) b.classList.toggle('on', b.dataset.id === this.placingId); },
+  markPlacing() {
+    for (const b of this.el.items.children) {
+      b.classList.toggle('on', b.dataset.id === this.placingId);
+      b.classList.toggle('armed', !!this.armed && b.dataset.id === this.armed.id);
+    }
+  },
   setTool(id) {
     Input.tool = id; Input.ropeStart = null;
     this.setPlacing(null);
@@ -539,6 +557,7 @@ const UI = {
       const e = Input.hoverEnt;
       h = e.kind === 'dummy' ? `<b>${e.name}</b> · ${e.statusText} · right-click to inspect` : `<b>${e.name}</b>${e.activatable ? ' · right-click or ' + k('Space') + ' to use' : ''}`;
     } else h = TOOLS.find((t) => t.id === Input.tool).hint + (this.coarse ? ' · Pinch to zoom' : ` · Right-drag to pan · Wheel to zoom`);
+    if (this.armed && !Input.placing && !Input.drag && !this.coarse) h += ` · ${k('R')} spawn ${this.armed.name}`;
     if (h !== this.lastHint) { this.el.hint.innerHTML = h; this.lastHint = h; }
     if (this.coarse) { const t = Input.drag ? Input.drag.ent : Input.lastEnt; this.el.use.disabled = !(t && !t.dead && t.activatable); }
   },

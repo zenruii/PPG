@@ -23,6 +23,7 @@ Runs entirely in the browser. No build step needed to play.
 | Tools: Grab, Pin, Rope, Explode, Ignite, Heal, Delete | `1` to `7` |
 | Pause, slow motion, health overlay | `P`, `T`, `L` |
 | Spawn a dummy at the cursor | `G` |
+| Spawn the last item you picked from the catalog again | `R` |
 | Clear blood and debris | `C` |
 | Delete under cursor | `X` / `Del` |
 
