@@ -399,7 +399,19 @@ function onPreSolve(contact) {
     }
   }
   const ua = ba.getUserData(), ub = bb.getUserData();
-  if ((ua.passFlesh && ub.mat === 'flesh') || (ub.passFlesh && ua.mat === 'flesh')) contact.setEnabled(false);
+  if ((ua.passFlesh && ub.mat === 'flesh') || (ub.passFlesh && ua.mat === 'flesh')) { contact.setEnabled(false); return; }
+  // a blade tip arriving fast enough to stab in: let it through, the impale joint takes over after the step
+  const da = fa.getUserData(), db = fb.getUserData();
+  if ((da && da.sharp === 'tip') || (db && db.sharp === 'tip')) {
+    const wm = contact.getWorldManifold(null);
+    if (!wm || !wm.points || !wm.points.length) return;
+    const p = v2(wm.points[0].x, wm.points[0].y);
+    const va = ba.getLinearVelocityFromWorldPoint(p), vb = bb.getLinearVelocityFromWorldPoint(p);
+    const rv = v2(va.x - vb.x, va.y - vb.y);
+    if ((da && da.sharp === 'tip' && Combat.tipWouldImpale(fa, fb, p, rv)) || (db && db.sharp === 'tip' && Combat.tipWouldImpale(fb, fa, p, v2(-rv.x, -rv.y)))) {
+      contact.setEnabled(false);
+    }
+  }
 }
 
 function onBeginContact(contact) {
@@ -1400,7 +1412,7 @@ class Dummy extends Entity {
   }
 
   /* ---------------- motor control ---------------- */
-  drive(p, target, tq) {
+  drive(p, target, tq, gain = 16) {
     const j = p.joint;
     if (!j || j._dead) return;
     if (!this.muscleOK(p)) { j.setMotorSpeed(0); j.setMaxMotorTorque(this.alive ? 2 : 1.2); return; }
@@ -1410,7 +1422,7 @@ class Dummy extends Entity {
     const lo = j.getLowerLimit(), hi = j.getUpperLimit();
     target = clamp(target, lo + 0.01, hi - 0.01);
     const a = j.getJointAngle();
-    j.setMotorSpeed(clamp((target - a) * 16, -14, 14));
+    j.setMotorSpeed(clamp((target - a) * gain, -14, 14));
     j.setMaxMotorTorque(tq);
   }
   limp(fr) {
@@ -1461,7 +1473,11 @@ class Dummy extends Entity {
     const airborne = hipH > 1.7;
     this.airT = airborne ? this.airT + dt : 0;
 
-    if (!this.alive) { this.state = 'fallen'; this.limp(this.deadT < 2 ? 3 : 1.4); return; }
+    if (!this.alive) {
+      this.state = 'fallen';
+      if (this.deadT < 1.6) this.spasm(dt); else this.limp(this.deadT < 3 ? 3 : 1.4);
+      return;
+    }
     if (this.cons < 0.35) { this.state = 'fallen'; this.fallenT = 0; this.limp(2.6); return; }
 
     switch (this.state) {
@@ -1481,6 +1497,24 @@ class Dummy extends Entity {
     }
 
     const s = this.strength();
+    if (this.stagger > 0) { this.stagger -= dt; if (this.stagger <= 0) this.stagCool = 0.8; }
+    if (this.stagCool > 0) this.stagCool -= dt;
+    if (this.legShock) for (const k in this.legShock) this.legShock[k] = Math.max(0, this.legShock[k] - dt);
+    if (this.state === 'stand') {
+      // being shoved or hit makes them stumble instead of standing rigid
+      // a sudden change in body velocity (a shove, a hit, a blast) starts a stumble
+      const cv = this.pvCom || { x: 0 };
+      if (Math.abs(cv.x) > 1.9 && this.stagger > 0) { this.state = 'fallen'; this.fallenT = 0; this.stagger = 0; this.step = null; }
+      else if ((this.dvAcc || 0) > (this.stagCool > 0 ? 1.4 : 0.45) && !(this.stagger > 0.05) && !this.step) {
+        this.stagger = Math.max(this.stagger || 0, 0.35 + Math.min(this.dvAcc, 3) * 0.2);
+        this.stagDir = Math.sign(cv.x) || this.stagDir || 1;
+      } else if (this.stagger > 0 && Math.abs(cv.x) > 0.25) this.stagDir = Math.sign(cv.x);
+    } else this.stagger = 0;
+    if (this.state === 'fallen' && this.cons > 0.5 && !grabbed && hipH > 0.45 && hipH < 1.6 && speed > 1.2) {
+      this.brace(s);
+      this.clutching = null;
+      return;
+    }
     if (this.state === 'stand' || this.state === 'getup') {
       const r = this.state === 'getup' ? clamp(this.getupT / 1.1, 0.15, 1) : 1;
       this.balance(s, r, gh, hipH, this.state === 'getup');
@@ -1499,54 +1533,161 @@ class Dummy extends Entity {
     const ch = P.chest.body, ab = P.abdomen.body;
     const k = s * r;
     const W = this.mass * 9.8;
-    // keep torso upright
-    this.servo(ch, -0.03 * f, 360 * k, 8);
-    this.servo(ab, 0, 300 * k, 8);
+    const t = G.time + this.phase;
+    const stag = !getup && this.stagger > 0 ? clamp(this.stagger / 0.5, 0, 1) : 0;
+    const dir = this.stagDir || 1;
+    const shock = this.legShock || {};
+    const weak = { F: this.legWeak('F'), B: this.legWeak('B') };
+    const hurtLean = (weak.F + weak.B) * 0.06;
+    // idle sway + breathing, lean into a stumble, hunch when hurt
+    const sway = 0.022 * Math.sin(t * 0.7) + 0.01 * Math.sin(t * 1.9);
+    const lean = -0.03 * f + sway - dir * 0.16 * stag - f * hurtLean - f * clamp(this.pain / 400, 0, 0.12);
+    this.servo(ch, lean, 360 * k * (1 - 0.45 * stag), 8);
+    this.servo(ab, lean * 0.5, 300 * k * (1 - 0.45 * stag), 8);
+    let feetMid = ab.getPosition().x;
     if (gh) {
       const vy = ab.getLinearVelocity().y;
-      let F = 0.42 * W + 5200 * (1.07 - hipH) - 520 * vy;
+      const dip = 0.04 * stag + (weak.F + weak.B) * 0.07 + Math.max(shock.F || 0, shock.B || 0) * 0.12;
+      let F = 0.42 * W + 5200 * (1.07 - dip - hipH) - 520 * vy;
       F = clamp(F, 0, (getup ? 1.3 : 0.95) * W) * k;
       ab.applyForceToCenter(v2(0, F), true);
-      // keep centre of mass above the feet
       let fx = 0, n = 0;
       for (const sd of ['F', 'B']) { const ft = P['foot' + sd]; if (!ft.detached) { fx += ft.body.getPosition().x; n++; } }
       if (n) {
-        fx /= n;
+        fx /= n; feetMid = fx;
         const c = this.com();
         const vx = ab.getLinearVelocity().x;
-        const Fx = clamp(-1500 * (c.x - fx) - 260 * vx, -0.3 * W, 0.3 * W) * k;
+        // while stumbling the body is allowed to travel; the steps catch it
+        const Fx = clamp(-1500 * (c.x - fx) - 260 * vx, -0.3 * W, 0.3 * W) * k * (1 - 0.45 * stag);
         ab.applyForceToCenter(v2(Fx, 0), true);
         if (!getup) {
-          // feet resist sliding apart
           for (const sd of ['F', 'B']) {
+            if (this.step && this.step.side === sd) continue;
             const ft = P['foot' + sd].body;
             const v = ft.getLinearVelocity();
-            ft.applyForceToCenter(v2(-v.x * 40 * k, 0), true);
+            ft.applyForceToCenter(v2(-v.x * 40 * k * (1 - 0.6 * stag), 0), true);
           }
         }
       }
     }
+    // stumble steps
+    if (!getup) this.updateStep(stag, dir, feetMid);
     const abA = ab.getAngle(), chA = ch.getAngle();
     const tuck = getup && this.getupT < 0.45;
+    const shift = 0.035 * Math.sin(t * 0.45);
     for (const sd of ['F', 'B']) {
       const th = P['thigh' + sd], sh = P['shin' + sd], ft = P['foot' + sd];
-      const stance = sd === 'F' ? 0.09 : -0.07;
+      const stance = (sd === 'F' ? 0.09 : -0.07) + shift;
+      const legK = k * (1 - 0.75 * (shock[sd] || 0)) * (1 - 0.35 * weak[sd]);
       if (tuck) {
         this.drive(th, f * 1.3, 500 * s);
         this.drive(sh, f * -1.9, 450 * s);
+      } else if (this.step && this.step.side === sd) {
+        const st = this.step, ph = clamp(st.t / st.dur, 0, 1);
+        const swing = Math.sin(ph * Math.PI);
+        this.drive(th, angNorm(st.dir * (0.32 + 0.25 * st.reach) * Math.min(1, ph * 2) - abA), 650 * k, 12);
+        this.drive(sh, f * (-0.08 - 1.0 * swing), 550 * k, 12);
       } else {
-        this.drive(th, angNorm(f * stance - abA), 700 * k);
-        this.drive(sh, f * -0.05, 650 * k);
+        const bend = 0.05 + 0.55 * weak[sd] + 0.9 * (shock[sd] || 0) + 0.12 * stag;
+        const planted = this.step ? -this.step.dir * 0.12 : 0;
+        this.drive(th, angNorm(f * stance + planted + f * bend * 0.45 - abA), 700 * legK);
+        this.drive(sh, f * -bend, 650 * legK);
       }
       this.drive(ft, angNorm(-sh.body.getAngle()), 200 * k);
     }
-    this.drive(P.abdomen, 0, 550 * k);
-    this.drive(P.head, angNorm(0.04 * f - chA) * 0.6, 80 * k);
+    this.drive(P.abdomen, f * (0.04 * stag + hurtLean), 550 * k);
+    // head: glance around when calm, snap toward a hit
+    const look = this.flinch > 0 ? -0.25 * f : 0.12 * Math.sin(t * 0.35) + 0.05 * Math.sin(t * 1.3);
+    this.drive(P.head, angNorm((0.04 * f + look) - chA) * 0.6, 80 * k, 9);
     for (const sd of ['F', 'B']) {
       const ua = P['uarm' + sd], la = P['larm' + sd];
       if (this.clutching === sd) continue;
-      this.drive(ua, angNorm((sd === 'F' ? 0.08 : -0.04) * f - chA), 55 * k);
-      this.drive(la, f * (sd === 'F' ? 0.3 : 0.18), 35 * k);
+      if (this.flinch > 0.15 && this.flinchPart !== 'uarm' + sd && this.flinchPart !== 'larm' + sd) {
+        // protective flinch: forearms come up in front of the face
+        this.drive(ua, f * (sd === 'F' ? 2.1 : 1.8), 70 * k, 12);
+        this.drive(la, f * 2.1, 45 * k, 12);
+      } else if (stag > 0.05) {
+        // arms fling out to catch balance
+        const flail = Math.sin(t * 9 + (sd === 'F' ? 0 : 2)) * 0.5;
+        this.drive(ua, angNorm(dir * (1.3 + flail) - chA), 60 * k, 10);
+        this.drive(la, f * (0.6 + 0.4 * flail), 40 * k, 10);
+      } else {
+        const swing = 0.07 * Math.sin(t * 0.9 + (sd === 'F' ? 0 : Math.PI));
+        this.drive(ua, angNorm((sd === 'F' ? 0.08 : -0.04) * f + swing - chA), 55 * k, 8);
+        this.drive(la, f * (sd === 'F' ? 0.3 : 0.18), 35 * k, 8);
+      }
+    }
+  }
+
+  legWeak(sd) {
+    const th = this.parts['thigh' + sd], sh = this.parts['shin' + sd];
+    const h = Math.min(th.hp / th.maxHp, sh.hp / sh.maxHp);
+    return clamp((0.75 - h) / 0.5, 0, 1);
+  }
+
+  /* a stumbling step: swing the trailing foot out in the direction the body is falling */
+  updateStep(stag, dir, feetMid) {
+    const P = this.parts;
+    if (this.step) {
+      this.step.t += DT;
+      if (this.step.t >= this.step.dur) { this.lastStepSide = this.step.side; this.step = null; this.stepCool = 0.04; }
+      return;
+    }
+    if (this.stepCool > 0) { this.stepCool -= DT; return; }
+    const c = this.com();
+    const off = c.x - feetMid;
+    const vx = (this.pvCom || { x: 0 }).x;
+    if (stag <= 0.02) return;
+    const need = Math.abs(off) > 0.06 || Math.abs(vx) > 0.25;
+    if (!need) return;
+    const d = Math.sign(off || vx) || dir;
+    // the foot further behind in the fall direction steps
+    let side = null, worst = 1e9;
+    for (const sd of ['F', 'B']) {
+      if (P['foot' + sd].detached || P['thigh' + sd].broken || P['shin' + sd].broken) continue;
+      const x = P['foot' + sd].body.getPosition().x * d;
+      if (x < worst) { worst = x; side = sd; }
+    }
+    if (side === this.lastStepSide && Math.random() < 0.5) side = side === 'F' ? 'B' : 'F';
+    if (!side) return;
+    this.step = { side, t: 0, dur: 0.24 + Math.random() * 0.06, dir: d, reach: clamp(Math.abs(off) * 4 + Math.abs(vx) * 0.4, 0, 1) };
+  }
+
+  /* arms shoot out toward the ground to break a fall */
+  brace(s) {
+    const P = this.parts, f = this.f;
+    const ab = P.abdomen.body, ch = P.chest.body;
+    const v = ab.getLinearVelocity();
+    const c = ch.getPosition();
+    const dx = Math.sign(v.x || 1);
+    const T = v2(c.x + dx * 0.55, c.y - 0.9);
+    for (const sd of ['F', 'B']) {
+      if (!this.reach(sd, T, s * 1.4)) {
+        this.drive(P['uarm' + sd], angNorm(dx * 1.0 - ch.getAngle()), 70 * s);
+        this.drive(P['larm' + sd], f * 0.2, 45 * s);
+      }
+    }
+    this.drive(P.head, f * -0.35, 70 * s);
+    this.drive(P.abdomen, f * 0.35, 300 * s * 0.5);
+    for (const sd of ['F', 'B']) {
+      this.drive(P['thigh' + sd], f * 0.5, 400 * s * 0.4);
+      this.drive(P['shin' + sd], f * -0.6, 350 * s * 0.4);
+    }
+  }
+
+  /* brief involuntary twitching right after death */
+  spasm(dt) {
+    const k = Math.max(0, 1 - this.deadT / 1.6);
+    this.spasmT = (this.spasmT || 0) - dt;
+    if (this.spasmT <= 0) {
+      this.spasmT = rand(0.06, 0.16);
+      for (const p of this.partList) {
+        const j = p.joint;
+        if (!j || j._dead || p.detached) continue;
+        const lo = j.getLowerLimit(), hi = j.getUpperLimit();
+        j.setMotorSpeed(Math.random() < 0.5 ? rand(-6, 6) * k : 0);
+        j.setMaxMotorTorque((p.kind === 'leg' ? 60 : p.kind === 'torso' ? 80 : 18) * k * rand(0.3, 1) + 2);
+      }
     }
   }
 
@@ -1649,8 +1790,11 @@ class Dummy extends Entity {
     const pm = { bullet: 1.1, cut: 1.1, stab: 1.2, blunt: 0.9, burn: 1.4, blast: 1.0, energy: 1.2 }[type] || 1;
     if (this.alive) this.pain += amt * pm * (this.adrenaline > 0 ? 0.3 : 1);
     if (p.n === 'head') this.brain -= amt * (type === 'blunt' ? 0.9 : 1.4);
-    if (amt > 10 && this.state === 'stand') this.stun = Math.max(this.stun, 0.2 + amt / 70);
-    this.flinch = 0.3;
+    if (amt > 28 && this.state === 'stand') this.stun = Math.max(this.stun, 0.2 + amt / 70);
+    if (this.state === 'stand') this.stagger = Math.max(this.stagger || 0, 0.35 + Math.min(amt, 40) / 60);
+    this.flinch = 0.45;
+    this.flinchPart = p.n;
+    if (p.kind === 'leg') { const sd = p.n.slice(-1); this.legShock = this.legShock || {}; this.legShock[sd] = Math.max(this.legShock[sd] || 0, Math.min(1.2, 0.3 + amt / 40)); }
   }
 
   addWound(p, wp, wn, r, bleed, type, ang = 0) {
@@ -2136,6 +2280,23 @@ const Combat = (() => {
     return u.mat === 'wood' || u.mat === 'rubber' || u.mat === 'plastic';
   }
 
+  /* would this tip contact drive the blade in? (same test is used in pre-solve so the collision
+     doesn't stop the blade before the impale joint exists) */
+  function tipWouldImpale(fx, ofx, p, rv) {
+    const d = fx.getUserData();
+    if (!d || d.sharp !== 'tip' || !d.depth || ofx.isSensor()) return false;
+    const b = fx.getBody(), ob = ofx.getBody();
+    if (!canImpale(ob)) return false;
+    const ud = b.getUserData();
+    if (ud.impales && (ud.impales.length >= 3 || ud.impales.some((i) => i.tb === ob))) return false;
+    const sp = Math.hypot(rv.x, rv.y);
+    if (sp < 1.2) return false;
+    const ax = b.getWorldVector(v2(d.ax != null ? d.ax : 1, (d.ay || 0) * (ud.sy || 1)));
+    const along = rv.x * ax.x + rv.y * ax.y;
+    const held = typeof Input !== 'undefined' && Input.isHeld(b);
+    return along > (d.thr || 4) * (held ? 0.45 : 1) && along / sp > 0.55;
+  }
+
   function sharpHit(fx, ofx, p, rv) {
     const b = fx.getBody(), ob = ofx.getBody();
     const d = fx.getUserData(), ud = b.getUserData(), oud = ob.getUserData();
@@ -2147,7 +2308,8 @@ const Combat = (() => {
     if (d.sharp === 'tip') {
       const ax = b.getWorldVector(v2(d.ax != null ? d.ax : 1, (d.ay || 0) * (ud.sy || 1)));
       const along = rv.x * ax.x + rv.y * ax.y;
-      if (along > (d.thr || 4) && along / sp > 0.55) {
+      const held = typeof Input !== 'undefined' && Input.isHeld(b);
+      if (along > (d.thr || 4) * (held ? 0.45 : 1) && along / sp > 0.55) {
         if (oud.part) {
           const dm = (along - 2) * (d.stab || 4) * massF * 0.6;
           oud.ent.stabHit(oud.part, p, ax, dm);
@@ -2191,7 +2353,10 @@ const Combat = (() => {
       enableLimit: true, lowerTranslation: -0.045, upperTranslation: d.depth,
       enableMotor: true, maxMotorForce: d.friction || 600, motorSpeed: 0, collideConnected: false,
     }, tb, wb, p, ax));
-    const rec = { j, wb, tb, d, t: G.time, part: tb.getUserData().part };
+    const rec = { j, wb, tb, d, t: G.time, part: tb.getUserData().part, depth: 0, exited: false };
+    let tfx = null; for (let f = tb.getFixtureList(); f; f = f.getNext()) if (!f.isSensor()) { tfx = f; break; }
+    const ex = tfx ? exitPoint(tfx, p, ax, 1.2) : null;
+    rec.thick = ex ? Math.max(0.04, ex.len) : 0.25;
     if (rec.part) {
       const lp = tb.getLocalPoint(p);
       rec.w = rec.part.wounds[rec.part.wounds.length - 1];
@@ -2200,12 +2365,15 @@ const Combat = (() => {
     wud.impales.push(rec);
     impales.push(rec);
   }
+  function a0(r) { return r.j.getAnchorA(); }
+  function ax0(r) { return r.wb.getWorldVector(v2(1, 0)); }
   function unimpale(rec, rip) {
     killJoint(rec.j);
     const wud = rec.wb.getUserData();
     if (wud && wud.impales) wud.impales = wud.impales.filter((r) => r !== rec);
     const i = impales.indexOf(rec); if (i >= 0) impales.splice(i, 1);
     if (rec.w) { rec.w.plug = false; rec.w.bleed += rip ? 1.5 : 0.8; }
+    if (rec.w2) { rec.w2.plug = false; rec.w2.bleed += 0.8; }
     if (!rec.wb._dead && !rec.tb._dead) noCollide(rec.wb, rec.tb, 0.35);
     if (rec.part && !rec.tb._dead) {
       const pt = rec.wb.getWorldPoint(v2(0, 0));
@@ -2440,6 +2608,30 @@ const Combat = (() => {
       if (r.j._dead || r.wb._dead || r.tb._dead) { impales.splice(i, 1); const wud = r.wb.getUserData(); if (wud && wud.impales) wud.impales = wud.impales.filter((q) => q !== r); continue; }
       const t = r.j.getJointTranslation();
       if (t < -0.035 && G.time - r.t > 0.05) { unimpale(r, false); continue; }
+      if (t > r.depth + 0.015) {
+        // the blade is being driven deeper: tissue damage scales with distance travelled
+        const dd = t - r.depth;
+        r.depth = t;
+        if (r.part) {
+          const dm = r.part.dummy || r.tb.getUserData().ent;
+          dm.hurt(r.part, dd * 90, 'stab');
+          if (r.w) r.w.bleed = Math.min(r.w.bleed + dd * 6, 6);
+          if (!r.exited && t > r.thick + 0.02) {
+            r.exited = true;
+            const ax = r.wb.getWorldVector(v2(r.d.ax != null ? r.d.ax : 1, (r.d.ay || 0) * (r.wb.getUserData().sy || 1)));
+            const a = r.j.getAnchorA();
+            const out = v2(a.x + ax.x * r.thick, a.y + ax.y * r.thick);
+            const w = dm.addWound(r.part, out, ax, 0.024, 1.4, 'exit');
+            if (w) w.plug = true;
+            r.w2 = w;
+            bloodSpray(out.x, out.y, ax.x, ax.y, 16, 3.2, 0.5, 1.2);
+            dm.log('Run through · ' + r.part.label);
+            if (r.part.n === 'head') dm.brain = -50;
+            if (r.part.n === 'chest' && Math.random() < 0.35) dm.hurt(r.part, 60, 'stab');
+            Sound.play('stab', 0.9);
+          } else if (Math.random() < dd * 20) bloodSpray(a0(r).x, a0(r).y, -ax0(r).x, -ax0(r).y, 3, 1.5, 0.6);
+        }
+      }
       const F = r.j.getReactionForce(1 / DT);
       const lat = Math.hypot(F.x, F.y);
       if (lat > (r.d.breakF || 9000)) unimpale(r, true);
@@ -2451,7 +2643,7 @@ const Combat = (() => {
 
   function reset() { impales.length = 0; projectiles.length = 0; firePools.length = 0; burning.clear(); G.lights.length = 0; }
 
-  return { update, onImpact, handleContact, fireBullet, fireBeam, explode, ignite, addFirePool, addProjectile, impale, releaseAll, reset,
+  return { tipWouldImpale, update, onImpact, handleContact, fireBullet, fireBeam, explode, ignite, addFirePool, addProjectile, impale, releaseAll, reset,
     get projectiles() { return projectiles; }, get firePools() { return firePools; }, get impales() { return impales; }, burning };
 })();
 
@@ -2780,7 +2972,7 @@ gunDef({
 /* crossbow + bolt */
 defItem({
   id: 'bolt', name: 'Crossbow Bolt', hidden: true, mat: 'wood', mass: 0.12, bullet: true, life: 90, cat: 'guns',
-  fix: [{ box: [0.2, 0.01, -0.02, 0] }, { poly: [[0.18, 0.016], [0.25, 0], [0.18, -0.016]], mat: 'metal', ud: { sharp: 'tip', stab: 14, thr: 2.5, depth: 0.32, friction: 300, breakF: 5000 } }],
+  fix: [{ box: [0.2, 0.01, -0.02, 0] }, { poly: [[0.18, 0.016], [0.25, 0], [0.18, -0.016]], mat: 'metal', ud: { sharp: 'tip', stab: 14, thr: 2.5, depth: 0.36, friction: 160, breakF: 5000 } }],
   update(it, dt) {
     // fly point-first
     const b = it.body, v = b.getLinearVelocity();
@@ -2930,7 +3122,7 @@ defItem({
 defItem({
   id: 'knife', name: 'Combat Knife', desc: 'Light and sharp. Throw it and it sticks.', cat: 'melee', mat: 'metal', mass: 0.35, bullet: true,
   fix: [{ box: [0.055, 0.017, -0.055, 0], mat: 'plastic' }, { box: [0.08, 0.018, 0.08, 0.002], ud: { sharp: 'edge', ny: -1, cut: 2.6, thr: 3.6 } },
-    { poly: [[0.158, 0.02], [0.215, 0.012], [0.158, -0.016]], ud: { sharp: 'tip', stab: 5, thr: 3.0, depth: 0.15, friction: 260, breakF: 4000 } }],
+    { poly: [[0.158, 0.02], [0.215, 0.012], [0.158, -0.016]], ud: { sharp: 'tip', stab: 5, thr: 2.6, depth: 0.17, friction: 150, breakF: 4500 } }],
   draw(ctx) {
     fillRR(ctx, -0.115, -0.019, 0.115, 0.038, 0.012, '#26282c', C.rim);
     for (let i = 0; i < 4; i++) line(ctx, -0.1 + i * 0.022, -0.017, -0.1 + i * 0.022, 0.017, 'rgba(255,255,255,0.08)', 0.005);
@@ -2944,7 +3136,7 @@ defItem({
   id: 'sword', name: 'Longsword', desc: 'Double-edged arming sword. Slashes and thrusts.', cat: 'melee', mat: 'metal', mass: 1.7, bullet: true,
   fix: [{ box: [0.1, 0.019, -0.1, 0], mat: 'wood' }, { circle: [0.03, -0.215, 0] }, { box: [0.014, 0.085, 0.006, 0] },
     { box: [0.4, 0.03, 0.42, 0], ud: { sharp: 'edge', both: true, ny: 1, cut: 3.4, thr: 4.0 } },
-    { poly: [[0.82, 0.03], [0.96, 0], [0.82, -0.03]], ud: { sharp: 'tip', stab: 4.5, thr: 4.2, depth: 0.55, friction: 650 } }],
+    { poly: [[0.82, 0.03], [0.96, 0], [0.82, -0.03]], ud: { sharp: 'tip', stab: 4.5, thr: 3.2, depth: 0.78, friction: 260, breakF: 9000 } }],
   draw(ctx) {
     fillRR(ctx, -0.2, -0.02, 0.2, 0.04, 0.012, '#4b3322', C.rim);
     for (let i = 0; i < 7; i++) line(ctx, -0.19 + i * 0.027, -0.02, -0.18 + i * 0.027, 0.02, 'rgba(0,0,0,0.3)', 0.006);
@@ -2960,7 +3152,7 @@ defItem({
   fix: [{ box: [0.13, 0.019, -0.13, 0], mat: 'wood' }, { box: [0.01, 0.05, 0.0, 0] },
     { box: [0.2, 0.022, 0.21, 0.005, 0.03], ud: { sharp: 'edge', ny: -1, cut: 4.2, thr: 3.8 } },
     { box: [0.19, 0.02, 0.59, 0.024, 0.07], ud: { sharp: 'edge', ny: -1, cut: 4.2, thr: 3.8 } },
-    { poly: [[0.76, 0.05], [0.86, 0.06], [0.77, 0.018]], ud: { sharp: 'tip', stab: 4, thr: 4.2, depth: 0.45, friction: 500 } }],
+    { poly: [[0.76, 0.05], [0.86, 0.06], [0.77, 0.018]], ud: { sharp: 'tip', stab: 4.5, thr: 3.2, depth: 0.66, friction: 230, breakF: 8000 } }],
   draw(ctx) {
     fillRR(ctx, -0.26, -0.02, 0.26, 0.04, 0.01, '#1e1f24', C.rim);
     ctx.strokeStyle = '#d8d0b8'; ctx.lineWidth = 0.005;
@@ -2994,7 +3186,7 @@ defItem({
 defItem({
   id: 'spear', name: 'Spear', desc: 'Long reach. Thrown hard it skewers right through.', cat: 'melee', mat: 'wood', mass: 2.3, bullet: true,
   fix: [{ box: [1.0, 0.02, 0, 0] }, { box: [0.05, 0.026, 0.97, 0], mat: 'metal' },
-    { poly: [[1.0, 0.04], [1.27, 0], [1.0, -0.04]], mat: 'metal', ud: { sharp: 'tip', stab: 6, thr: 3.4, depth: 0.6, friction: 700, breakF: 11000 } }],
+    { poly: [[1.0, 0.04], [1.27, 0], [1.0, -0.04]], mat: 'metal', ud: { sharp: 'tip', stab: 6, thr: 2.8, depth: 0.9, friction: 330, breakF: 12000 } }],
   update(it) { const b = it.body, v = b.getLinearVelocity(); if (!Input.isHeld(b) && v.length() > 9 && !(b.getUserData().impales || []).length) { const err = angNorm(Math.atan2(v.y, v.x) - b.getAngle()); b.applyTorque(err * 30 - b.getAngularVelocity() * 3, true); } },
   draw(ctx) {
     fillRR(ctx, -1.0, -0.02, 1.98, 0.04, 0.02, C.woodL, C.rim);
@@ -3010,7 +3202,7 @@ defItem({
   id: 'lance', name: 'Jousting Lance', desc: 'Three metres of cavalry lance. Kebab two dummies at once.', cat: 'melee', mat: 'wood', mass: 6.5, bullet: true,
   fix: [{ box: [0.16, 0.035, -0.46, 0] }, { poly: [[-0.3, 0.13], [-0.2, 0.06], [-0.2, -0.06], [-0.3, -0.13]], mat: 'metal' },
     { poly: [[-0.2, 0.065], [2.4, 0.024], [2.4, -0.024], [-0.2, -0.065]] },
-    { poly: [[2.4, 0.024], [2.76, 0], [2.4, -0.024]], mat: 'metal', ud: { sharp: 'tip', stab: 7, thr: 3.0, depth: 0.95, friction: 900, breakF: 16000 } }],
+    { poly: [[2.4, 0.024], [2.76, 0], [2.4, -0.024]], mat: 'metal', ud: { sharp: 'tip', stab: 7, thr: 2.6, depth: 1.5, friction: 420, breakF: 18000 } }],
   update(it) { const b = it.body, v = b.getLinearVelocity(); if (!Input.isHeld(b) && v.length() > 8 && !(b.getUserData().impales || []).length) { const err = angNorm(Math.atan2(v.y, v.x) - b.getAngle()); b.applyTorque(err * 120 - b.getAngularVelocity() * 12, true); } },
   draw(ctx) {
     fillRR(ctx, -0.62, -0.036, 0.42, 0.072, 0.02, '#3a2a20', C.rim);
@@ -3050,7 +3242,7 @@ defItem({
 
 defItem({
   id: 'crowbar', name: 'Crowbar', desc: 'A trusty physicist\'s crowbar. Pries crates and skulls alike.', cat: 'melee', mat: 'metal', mass: 1.5, bullet: true, blunt: 2.4,
-  fix: [{ box: [0.38, 0.014, 0, 0] }, { box: [0.045, 0.013, -0.41, 0.03, 0.9] }, { box: [0.032, 0.011, 0.395, 0.01, 0.3], ud: { sharp: 'tip', stab: 2, thr: 5, depth: 0.08, friction: 400 } }],
+  fix: [{ box: [0.38, 0.014, 0, 0] }, { box: [0.045, 0.013, -0.41, 0.03, 0.9] }, { box: [0.032, 0.011, 0.395, 0.01, 0.3], ud: { sharp: 'tip', stab: 2.5, thr: 4, depth: 0.12, friction: 300 } }],
   draw(ctx) {
     ctx.strokeStyle = '#b8352a'; ctx.lineWidth = 0.03; ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(0.42, 0.02); ctx.lineTo(0.37, 0.0); ctx.lineTo(-0.36, 0.0); ctx.quadraticCurveTo(-0.45, 0.0, -0.44, 0.06); ctx.lineTo(-0.4, 0.075); ctx.stroke();
@@ -4061,6 +4253,9 @@ const Input = {
     if (!d) return;
     if (d.body._dead || d.j._dead || d.ent.dead) { this.drag = null; return; }
     d.j.setTarget(v2(this.wx, this.wy));
+    // re-measure what is attached (an impaled dummy adds its weight) so a held blade can be pushed through
+    d.mt = (d.mt || 0) - dt;
+    if (d.mt <= 0) { d.mt = 0.2; d.m = this.connectedMass(d.body); d.j.setMaxForce(d.m * 60 + 50); }
     if (this.keys.has('KeyQ')) d.holdAngle += 3 * dt;
     if (this.keys.has('KeyE')) d.holdAngle -= 3 * dt;
     if (d.hold) {

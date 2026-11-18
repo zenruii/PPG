@@ -81,6 +81,9 @@ const Input = {
     if (!d) return;
     if (d.body._dead || d.j._dead || d.ent.dead) { this.drag = null; return; }
     d.j.setTarget(v2(this.wx, this.wy));
+    // re-measure what is attached (an impaled dummy adds its weight) so a held blade can be pushed through
+    d.mt = (d.mt || 0) - dt;
+    if (d.mt <= 0) { d.mt = 0.2; d.m = this.connectedMass(d.body); d.j.setMaxForce(d.m * 60 + 50); }
     if (this.keys.has('KeyQ')) d.holdAngle += 3 * dt;
     if (this.keys.has('KeyE')) d.holdAngle -= 3 * dt;
     if (d.hold) {

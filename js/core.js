@@ -182,7 +182,19 @@ function onPreSolve(contact) {
     }
   }
   const ua = ba.getUserData(), ub = bb.getUserData();
-  if ((ua.passFlesh && ub.mat === 'flesh') || (ub.passFlesh && ua.mat === 'flesh')) contact.setEnabled(false);
+  if ((ua.passFlesh && ub.mat === 'flesh') || (ub.passFlesh && ua.mat === 'flesh')) { contact.setEnabled(false); return; }
+  // a blade tip arriving fast enough to stab in: let it through, the impale joint takes over after the step
+  const da = fa.getUserData(), db = fb.getUserData();
+  if ((da && da.sharp === 'tip') || (db && db.sharp === 'tip')) {
+    const wm = contact.getWorldManifold(null);
+    if (!wm || !wm.points || !wm.points.length) return;
+    const p = v2(wm.points[0].x, wm.points[0].y);
+    const va = ba.getLinearVelocityFromWorldPoint(p), vb = bb.getLinearVelocityFromWorldPoint(p);
+    const rv = v2(va.x - vb.x, va.y - vb.y);
+    if ((da && da.sharp === 'tip' && Combat.tipWouldImpale(fa, fb, p, rv)) || (db && db.sharp === 'tip' && Combat.tipWouldImpale(fb, fa, p, v2(-rv.x, -rv.y)))) {
+      contact.setEnabled(false);
+    }
+  }
 }
 
 function onBeginContact(contact) {

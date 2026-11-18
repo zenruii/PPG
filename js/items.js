@@ -322,7 +322,7 @@ gunDef({
 /* crossbow + bolt */
 defItem({
   id: 'bolt', name: 'Crossbow Bolt', hidden: true, mat: 'wood', mass: 0.12, bullet: true, life: 90, cat: 'guns',
-  fix: [{ box: [0.2, 0.01, -0.02, 0] }, { poly: [[0.18, 0.016], [0.25, 0], [0.18, -0.016]], mat: 'metal', ud: { sharp: 'tip', stab: 14, thr: 2.5, depth: 0.32, friction: 300, breakF: 5000 } }],
+  fix: [{ box: [0.2, 0.01, -0.02, 0] }, { poly: [[0.18, 0.016], [0.25, 0], [0.18, -0.016]], mat: 'metal', ud: { sharp: 'tip', stab: 14, thr: 2.5, depth: 0.36, friction: 160, breakF: 5000 } }],
   update(it, dt) {
     // fly point-first
     const b = it.body, v = b.getLinearVelocity();
@@ -472,7 +472,7 @@ defItem({
 defItem({
   id: 'knife', name: 'Combat Knife', desc: 'Light and sharp. Throw it and it sticks.', cat: 'melee', mat: 'metal', mass: 0.35, bullet: true,
   fix: [{ box: [0.055, 0.017, -0.055, 0], mat: 'plastic' }, { box: [0.08, 0.018, 0.08, 0.002], ud: { sharp: 'edge', ny: -1, cut: 2.6, thr: 3.6 } },
-    { poly: [[0.158, 0.02], [0.215, 0.012], [0.158, -0.016]], ud: { sharp: 'tip', stab: 5, thr: 3.0, depth: 0.15, friction: 260, breakF: 4000 } }],
+    { poly: [[0.158, 0.02], [0.215, 0.012], [0.158, -0.016]], ud: { sharp: 'tip', stab: 5, thr: 2.6, depth: 0.17, friction: 150, breakF: 4500 } }],
   draw(ctx) {
     fillRR(ctx, -0.115, -0.019, 0.115, 0.038, 0.012, '#26282c', C.rim);
     for (let i = 0; i < 4; i++) line(ctx, -0.1 + i * 0.022, -0.017, -0.1 + i * 0.022, 0.017, 'rgba(255,255,255,0.08)', 0.005);
@@ -486,7 +486,7 @@ defItem({
   id: 'sword', name: 'Longsword', desc: 'Double-edged arming sword. Slashes and thrusts.', cat: 'melee', mat: 'metal', mass: 1.7, bullet: true,
   fix: [{ box: [0.1, 0.019, -0.1, 0], mat: 'wood' }, { circle: [0.03, -0.215, 0] }, { box: [0.014, 0.085, 0.006, 0] },
     { box: [0.4, 0.03, 0.42, 0], ud: { sharp: 'edge', both: true, ny: 1, cut: 3.4, thr: 4.0 } },
-    { poly: [[0.82, 0.03], [0.96, 0], [0.82, -0.03]], ud: { sharp: 'tip', stab: 4.5, thr: 4.2, depth: 0.55, friction: 650 } }],
+    { poly: [[0.82, 0.03], [0.96, 0], [0.82, -0.03]], ud: { sharp: 'tip', stab: 4.5, thr: 3.2, depth: 0.78, friction: 260, breakF: 9000 } }],
   draw(ctx) {
     fillRR(ctx, -0.2, -0.02, 0.2, 0.04, 0.012, '#4b3322', C.rim);
     for (let i = 0; i < 7; i++) line(ctx, -0.19 + i * 0.027, -0.02, -0.18 + i * 0.027, 0.02, 'rgba(0,0,0,0.3)', 0.006);
@@ -502,7 +502,7 @@ defItem({
   fix: [{ box: [0.13, 0.019, -0.13, 0], mat: 'wood' }, { box: [0.01, 0.05, 0.0, 0] },
     { box: [0.2, 0.022, 0.21, 0.005, 0.03], ud: { sharp: 'edge', ny: -1, cut: 4.2, thr: 3.8 } },
     { box: [0.19, 0.02, 0.59, 0.024, 0.07], ud: { sharp: 'edge', ny: -1, cut: 4.2, thr: 3.8 } },
-    { poly: [[0.76, 0.05], [0.86, 0.06], [0.77, 0.018]], ud: { sharp: 'tip', stab: 4, thr: 4.2, depth: 0.45, friction: 500 } }],
+    { poly: [[0.76, 0.05], [0.86, 0.06], [0.77, 0.018]], ud: { sharp: 'tip', stab: 4.5, thr: 3.2, depth: 0.66, friction: 230, breakF: 8000 } }],
   draw(ctx) {
     fillRR(ctx, -0.26, -0.02, 0.26, 0.04, 0.01, '#1e1f24', C.rim);
     ctx.strokeStyle = '#d8d0b8'; ctx.lineWidth = 0.005;
@@ -536,7 +536,7 @@ defItem({
 defItem({
   id: 'spear', name: 'Spear', desc: 'Long reach. Thrown hard it skewers right through.', cat: 'melee', mat: 'wood', mass: 2.3, bullet: true,
   fix: [{ box: [1.0, 0.02, 0, 0] }, { box: [0.05, 0.026, 0.97, 0], mat: 'metal' },
-    { poly: [[1.0, 0.04], [1.27, 0], [1.0, -0.04]], mat: 'metal', ud: { sharp: 'tip', stab: 6, thr: 3.4, depth: 0.6, friction: 700, breakF: 11000 } }],
+    { poly: [[1.0, 0.04], [1.27, 0], [1.0, -0.04]], mat: 'metal', ud: { sharp: 'tip', stab: 6, thr: 2.8, depth: 0.9, friction: 330, breakF: 12000 } }],
   update(it) { const b = it.body, v = b.getLinearVelocity(); if (!Input.isHeld(b) && v.length() > 9 && !(b.getUserData().impales || []).length) { const err = angNorm(Math.atan2(v.y, v.x) - b.getAngle()); b.applyTorque(err * 30 - b.getAngularVelocity() * 3, true); } },
   draw(ctx) {
     fillRR(ctx, -1.0, -0.02, 1.98, 0.04, 0.02, C.woodL, C.rim);
@@ -552,7 +552,7 @@ defItem({
   id: 'lance', name: 'Jousting Lance', desc: 'Three metres of cavalry lance. Kebab two dummies at once.', cat: 'melee', mat: 'wood', mass: 6.5, bullet: true,
   fix: [{ box: [0.16, 0.035, -0.46, 0] }, { poly: [[-0.3, 0.13], [-0.2, 0.06], [-0.2, -0.06], [-0.3, -0.13]], mat: 'metal' },
     { poly: [[-0.2, 0.065], [2.4, 0.024], [2.4, -0.024], [-0.2, -0.065]] },
-    { poly: [[2.4, 0.024], [2.76, 0], [2.4, -0.024]], mat: 'metal', ud: { sharp: 'tip', stab: 7, thr: 3.0, depth: 0.95, friction: 900, breakF: 16000 } }],
+    { poly: [[2.4, 0.024], [2.76, 0], [2.4, -0.024]], mat: 'metal', ud: { sharp: 'tip', stab: 7, thr: 2.6, depth: 1.5, friction: 420, breakF: 18000 } }],
   update(it) { const b = it.body, v = b.getLinearVelocity(); if (!Input.isHeld(b) && v.length() > 8 && !(b.getUserData().impales || []).length) { const err = angNorm(Math.atan2(v.y, v.x) - b.getAngle()); b.applyTorque(err * 120 - b.getAngularVelocity() * 12, true); } },
   draw(ctx) {
     fillRR(ctx, -0.62, -0.036, 0.42, 0.072, 0.02, '#3a2a20', C.rim);
@@ -592,7 +592,7 @@ defItem({
 
 defItem({
   id: 'crowbar', name: 'Crowbar', desc: 'A trusty physicist\'s crowbar. Pries crates and skulls alike.', cat: 'melee', mat: 'metal', mass: 1.5, bullet: true, blunt: 2.4,
-  fix: [{ box: [0.38, 0.014, 0, 0] }, { box: [0.045, 0.013, -0.41, 0.03, 0.9] }, { box: [0.032, 0.011, 0.395, 0.01, 0.3], ud: { sharp: 'tip', stab: 2, thr: 5, depth: 0.08, friction: 400 } }],
+  fix: [{ box: [0.38, 0.014, 0, 0] }, { box: [0.045, 0.013, -0.41, 0.03, 0.9] }, { box: [0.032, 0.011, 0.395, 0.01, 0.3], ud: { sharp: 'tip', stab: 2.5, thr: 4, depth: 0.12, friction: 300 } }],
   draw(ctx) {
     ctx.strokeStyle = '#b8352a'; ctx.lineWidth = 0.03; ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(0.42, 0.02); ctx.lineTo(0.37, 0.0); ctx.lineTo(-0.36, 0.0); ctx.quadraticCurveTo(-0.45, 0.0, -0.44, 0.06); ctx.lineTo(-0.4, 0.075); ctx.stroke();

@@ -266,7 +266,7 @@ class Dummy extends Entity {
   }
 
   /* ---------------- motor control ---------------- */
-  drive(p, target, tq) {
+  drive(p, target, tq, gain = 16) {
     const j = p.joint;
     if (!j || j._dead) return;
     if (!this.muscleOK(p)) { j.setMotorSpeed(0); j.setMaxMotorTorque(this.alive ? 2 : 1.2); return; }
@@ -276,7 +276,7 @@ class Dummy extends Entity {
     const lo = j.getLowerLimit(), hi = j.getUpperLimit();
     target = clamp(target, lo + 0.01, hi - 0.01);
     const a = j.getJointAngle();
-    j.setMotorSpeed(clamp((target - a) * 16, -14, 14));
+    j.setMotorSpeed(clamp((target - a) * gain, -14, 14));
     j.setMaxMotorTorque(tq);
   }
   limp(fr) {
@@ -327,7 +327,11 @@ class Dummy extends Entity {
     const airborne = hipH > 1.7;
     this.airT = airborne ? this.airT + dt : 0;
 
-    if (!this.alive) { this.state = 'fallen'; this.limp(this.deadT < 2 ? 3 : 1.4); return; }
+    if (!this.alive) {
+      this.state = 'fallen';
+      if (this.deadT < 1.6) this.spasm(dt); else this.limp(this.deadT < 3 ? 3 : 1.4);
+      return;
+    }
     if (this.cons < 0.35) { this.state = 'fallen'; this.fallenT = 0; this.limp(2.6); return; }
 
     switch (this.state) {
@@ -347,6 +351,24 @@ class Dummy extends Entity {
     }
 
     const s = this.strength();
+    if (this.stagger > 0) { this.stagger -= dt; if (this.stagger <= 0) this.stagCool = 0.8; }
+    if (this.stagCool > 0) this.stagCool -= dt;
+    if (this.legShock) for (const k in this.legShock) this.legShock[k] = Math.max(0, this.legShock[k] - dt);
+    if (this.state === 'stand') {
+      // being shoved or hit makes them stumble instead of standing rigid
+      // a sudden change in body velocity (a shove, a hit, a blast) starts a stumble
+      const cv = this.pvCom || { x: 0 };
+      if (Math.abs(cv.x) > 1.9 && this.stagger > 0) { this.state = 'fallen'; this.fallenT = 0; this.stagger = 0; this.step = null; }
+      else if ((this.dvAcc || 0) > (this.stagCool > 0 ? 1.4 : 0.45) && !(this.stagger > 0.05) && !this.step) {
+        this.stagger = Math.max(this.stagger || 0, 0.35 + Math.min(this.dvAcc, 3) * 0.2);
+        this.stagDir = Math.sign(cv.x) || this.stagDir || 1;
+      } else if (this.stagger > 0 && Math.abs(cv.x) > 0.25) this.stagDir = Math.sign(cv.x);
+    } else this.stagger = 0;
+    if (this.state === 'fallen' && this.cons > 0.5 && !grabbed && hipH > 0.45 && hipH < 1.6 && speed > 1.2) {
+      this.brace(s);
+      this.clutching = null;
+      return;
+    }
     if (this.state === 'stand' || this.state === 'getup') {
       const r = this.state === 'getup' ? clamp(this.getupT / 1.1, 0.15, 1) : 1;
       this.balance(s, r, gh, hipH, this.state === 'getup');
@@ -365,54 +387,161 @@ class Dummy extends Entity {
     const ch = P.chest.body, ab = P.abdomen.body;
     const k = s * r;
     const W = this.mass * 9.8;
-    // keep torso upright
-    this.servo(ch, -0.03 * f, 360 * k, 8);
-    this.servo(ab, 0, 300 * k, 8);
+    const t = G.time + this.phase;
+    const stag = !getup && this.stagger > 0 ? clamp(this.stagger / 0.5, 0, 1) : 0;
+    const dir = this.stagDir || 1;
+    const shock = this.legShock || {};
+    const weak = { F: this.legWeak('F'), B: this.legWeak('B') };
+    const hurtLean = (weak.F + weak.B) * 0.06;
+    // idle sway + breathing, lean into a stumble, hunch when hurt
+    const sway = 0.022 * Math.sin(t * 0.7) + 0.01 * Math.sin(t * 1.9);
+    const lean = -0.03 * f + sway - dir * 0.16 * stag - f * hurtLean - f * clamp(this.pain / 400, 0, 0.12);
+    this.servo(ch, lean, 360 * k * (1 - 0.45 * stag), 8);
+    this.servo(ab, lean * 0.5, 300 * k * (1 - 0.45 * stag), 8);
+    let feetMid = ab.getPosition().x;
     if (gh) {
       const vy = ab.getLinearVelocity().y;
-      let F = 0.42 * W + 5200 * (1.07 - hipH) - 520 * vy;
+      const dip = 0.04 * stag + (weak.F + weak.B) * 0.07 + Math.max(shock.F || 0, shock.B || 0) * 0.12;
+      let F = 0.42 * W + 5200 * (1.07 - dip - hipH) - 520 * vy;
       F = clamp(F, 0, (getup ? 1.3 : 0.95) * W) * k;
       ab.applyForceToCenter(v2(0, F), true);
-      // keep centre of mass above the feet
       let fx = 0, n = 0;
       for (const sd of ['F', 'B']) { const ft = P['foot' + sd]; if (!ft.detached) { fx += ft.body.getPosition().x; n++; } }
       if (n) {
-        fx /= n;
+        fx /= n; feetMid = fx;
         const c = this.com();
         const vx = ab.getLinearVelocity().x;
-        const Fx = clamp(-1500 * (c.x - fx) - 260 * vx, -0.3 * W, 0.3 * W) * k;
+        // while stumbling the body is allowed to travel; the steps catch it
+        const Fx = clamp(-1500 * (c.x - fx) - 260 * vx, -0.3 * W, 0.3 * W) * k * (1 - 0.45 * stag);
         ab.applyForceToCenter(v2(Fx, 0), true);
         if (!getup) {
-          // feet resist sliding apart
           for (const sd of ['F', 'B']) {
+            if (this.step && this.step.side === sd) continue;
             const ft = P['foot' + sd].body;
             const v = ft.getLinearVelocity();
-            ft.applyForceToCenter(v2(-v.x * 40 * k, 0), true);
+            ft.applyForceToCenter(v2(-v.x * 40 * k * (1 - 0.6 * stag), 0), true);
           }
         }
       }
     }
+    // stumble steps
+    if (!getup) this.updateStep(stag, dir, feetMid);
     const abA = ab.getAngle(), chA = ch.getAngle();
     const tuck = getup && this.getupT < 0.45;
+    const shift = 0.035 * Math.sin(t * 0.45);
     for (const sd of ['F', 'B']) {
       const th = P['thigh' + sd], sh = P['shin' + sd], ft = P['foot' + sd];
-      const stance = sd === 'F' ? 0.09 : -0.07;
+      const stance = (sd === 'F' ? 0.09 : -0.07) + shift;
+      const legK = k * (1 - 0.75 * (shock[sd] || 0)) * (1 - 0.35 * weak[sd]);
       if (tuck) {
         this.drive(th, f * 1.3, 500 * s);
         this.drive(sh, f * -1.9, 450 * s);
+      } else if (this.step && this.step.side === sd) {
+        const st = this.step, ph = clamp(st.t / st.dur, 0, 1);
+        const swing = Math.sin(ph * Math.PI);
+        this.drive(th, angNorm(st.dir * (0.32 + 0.25 * st.reach) * Math.min(1, ph * 2) - abA), 650 * k, 12);
+        this.drive(sh, f * (-0.08 - 1.0 * swing), 550 * k, 12);
       } else {
-        this.drive(th, angNorm(f * stance - abA), 700 * k);
-        this.drive(sh, f * -0.05, 650 * k);
+        const bend = 0.05 + 0.55 * weak[sd] + 0.9 * (shock[sd] || 0) + 0.12 * stag;
+        const planted = this.step ? -this.step.dir * 0.12 : 0;
+        this.drive(th, angNorm(f * stance + planted + f * bend * 0.45 - abA), 700 * legK);
+        this.drive(sh, f * -bend, 650 * legK);
       }
       this.drive(ft, angNorm(-sh.body.getAngle()), 200 * k);
     }
-    this.drive(P.abdomen, 0, 550 * k);
-    this.drive(P.head, angNorm(0.04 * f - chA) * 0.6, 80 * k);
+    this.drive(P.abdomen, f * (0.04 * stag + hurtLean), 550 * k);
+    // head: glance around when calm, snap toward a hit
+    const look = this.flinch > 0 ? -0.25 * f : 0.12 * Math.sin(t * 0.35) + 0.05 * Math.sin(t * 1.3);
+    this.drive(P.head, angNorm((0.04 * f + look) - chA) * 0.6, 80 * k, 9);
     for (const sd of ['F', 'B']) {
       const ua = P['uarm' + sd], la = P['larm' + sd];
       if (this.clutching === sd) continue;
-      this.drive(ua, angNorm((sd === 'F' ? 0.08 : -0.04) * f - chA), 55 * k);
-      this.drive(la, f * (sd === 'F' ? 0.3 : 0.18), 35 * k);
+      if (this.flinch > 0.15 && this.flinchPart !== 'uarm' + sd && this.flinchPart !== 'larm' + sd) {
+        // protective flinch: forearms come up in front of the face
+        this.drive(ua, f * (sd === 'F' ? 2.1 : 1.8), 70 * k, 12);
+        this.drive(la, f * 2.1, 45 * k, 12);
+      } else if (stag > 0.05) {
+        // arms fling out to catch balance
+        const flail = Math.sin(t * 9 + (sd === 'F' ? 0 : 2)) * 0.5;
+        this.drive(ua, angNorm(dir * (1.3 + flail) - chA), 60 * k, 10);
+        this.drive(la, f * (0.6 + 0.4 * flail), 40 * k, 10);
+      } else {
+        const swing = 0.07 * Math.sin(t * 0.9 + (sd === 'F' ? 0 : Math.PI));
+        this.drive(ua, angNorm((sd === 'F' ? 0.08 : -0.04) * f + swing - chA), 55 * k, 8);
+        this.drive(la, f * (sd === 'F' ? 0.3 : 0.18), 35 * k, 8);
+      }
+    }
+  }
+
+  legWeak(sd) {
+    const th = this.parts['thigh' + sd], sh = this.parts['shin' + sd];
+    const h = Math.min(th.hp / th.maxHp, sh.hp / sh.maxHp);
+    return clamp((0.75 - h) / 0.5, 0, 1);
+  }
+
+  /* a stumbling step: swing the trailing foot out in the direction the body is falling */
+  updateStep(stag, dir, feetMid) {
+    const P = this.parts;
+    if (this.step) {
+      this.step.t += DT;
+      if (this.step.t >= this.step.dur) { this.lastStepSide = this.step.side; this.step = null; this.stepCool = 0.04; }
+      return;
+    }
+    if (this.stepCool > 0) { this.stepCool -= DT; return; }
+    const c = this.com();
+    const off = c.x - feetMid;
+    const vx = (this.pvCom || { x: 0 }).x;
+    if (stag <= 0.02) return;
+    const need = Math.abs(off) > 0.06 || Math.abs(vx) > 0.25;
+    if (!need) return;
+    const d = Math.sign(off || vx) || dir;
+    // the foot further behind in the fall direction steps
+    let side = null, worst = 1e9;
+    for (const sd of ['F', 'B']) {
+      if (P['foot' + sd].detached || P['thigh' + sd].broken || P['shin' + sd].broken) continue;
+      const x = P['foot' + sd].body.getPosition().x * d;
+      if (x < worst) { worst = x; side = sd; }
+    }
+    if (side === this.lastStepSide && Math.random() < 0.5) side = side === 'F' ? 'B' : 'F';
+    if (!side) return;
+    this.step = { side, t: 0, dur: 0.24 + Math.random() * 0.06, dir: d, reach: clamp(Math.abs(off) * 4 + Math.abs(vx) * 0.4, 0, 1) };
+  }
+
+  /* arms shoot out toward the ground to break a fall */
+  brace(s) {
+    const P = this.parts, f = this.f;
+    const ab = P.abdomen.body, ch = P.chest.body;
+    const v = ab.getLinearVelocity();
+    const c = ch.getPosition();
+    const dx = Math.sign(v.x || 1);
+    const T = v2(c.x + dx * 0.55, c.y - 0.9);
+    for (const sd of ['F', 'B']) {
+      if (!this.reach(sd, T, s * 1.4)) {
+        this.drive(P['uarm' + sd], angNorm(dx * 1.0 - ch.getAngle()), 70 * s);
+        this.drive(P['larm' + sd], f * 0.2, 45 * s);
+      }
+    }
+    this.drive(P.head, f * -0.35, 70 * s);
+    this.drive(P.abdomen, f * 0.35, 300 * s * 0.5);
+    for (const sd of ['F', 'B']) {
+      this.drive(P['thigh' + sd], f * 0.5, 400 * s * 0.4);
+      this.drive(P['shin' + sd], f * -0.6, 350 * s * 0.4);
+    }
+  }
+
+  /* brief involuntary twitching right after death */
+  spasm(dt) {
+    const k = Math.max(0, 1 - this.deadT / 1.6);
+    this.spasmT = (this.spasmT || 0) - dt;
+    if (this.spasmT <= 0) {
+      this.spasmT = rand(0.06, 0.16);
+      for (const p of this.partList) {
+        const j = p.joint;
+        if (!j || j._dead || p.detached) continue;
+        const lo = j.getLowerLimit(), hi = j.getUpperLimit();
+        j.setMotorSpeed(Math.random() < 0.5 ? rand(-6, 6) * k : 0);
+        j.setMaxMotorTorque((p.kind === 'leg' ? 60 : p.kind === 'torso' ? 80 : 18) * k * rand(0.3, 1) + 2);
+      }
     }
   }
 
@@ -515,8 +644,11 @@ class Dummy extends Entity {
     const pm = { bullet: 1.1, cut: 1.1, stab: 1.2, blunt: 0.9, burn: 1.4, blast: 1.0, energy: 1.2 }[type] || 1;
     if (this.alive) this.pain += amt * pm * (this.adrenaline > 0 ? 0.3 : 1);
     if (p.n === 'head') this.brain -= amt * (type === 'blunt' ? 0.9 : 1.4);
-    if (amt > 10 && this.state === 'stand') this.stun = Math.max(this.stun, 0.2 + amt / 70);
-    this.flinch = 0.3;
+    if (amt > 28 && this.state === 'stand') this.stun = Math.max(this.stun, 0.2 + amt / 70);
+    if (this.state === 'stand') this.stagger = Math.max(this.stagger || 0, 0.35 + Math.min(amt, 40) / 60);
+    this.flinch = 0.45;
+    this.flinchPart = p.n;
+    if (p.kind === 'leg') { const sd = p.n.slice(-1); this.legShock = this.legShock || {}; this.legShock[sd] = Math.max(this.legShock[sd] || 0, Math.min(1.2, 0.3 + amt / 40)); }
   }
 
   addWound(p, wp, wn, r, bleed, type, ang = 0) {

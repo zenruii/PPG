@@ -55,6 +55,23 @@ const Combat = (() => {
     return u.mat === 'wood' || u.mat === 'rubber' || u.mat === 'plastic';
   }
 
+  /* would this tip contact drive the blade in? (same test is used in pre-solve so the collision
+     doesn't stop the blade before the impale joint exists) */
+  function tipWouldImpale(fx, ofx, p, rv) {
+    const d = fx.getUserData();
+    if (!d || d.sharp !== 'tip' || !d.depth || ofx.isSensor()) return false;
+    const b = fx.getBody(), ob = ofx.getBody();
+    if (!canImpale(ob)) return false;
+    const ud = b.getUserData();
+    if (ud.impales && (ud.impales.length >= 3 || ud.impales.some((i) => i.tb === ob))) return false;
+    const sp = Math.hypot(rv.x, rv.y);
+    if (sp < 1.2) return false;
+    const ax = b.getWorldVector(v2(d.ax != null ? d.ax : 1, (d.ay || 0) * (ud.sy || 1)));
+    const along = rv.x * ax.x + rv.y * ax.y;
+    const held = typeof Input !== 'undefined' && Input.isHeld(b);
+    return along > (d.thr || 4) * (held ? 0.45 : 1) && along / sp > 0.55;
+  }
+
   function sharpHit(fx, ofx, p, rv) {
     const b = fx.getBody(), ob = ofx.getBody();
     const d = fx.getUserData(), ud = b.getUserData(), oud = ob.getUserData();
@@ -66,7 +83,8 @@ const Combat = (() => {
     if (d.sharp === 'tip') {
       const ax = b.getWorldVector(v2(d.ax != null ? d.ax : 1, (d.ay || 0) * (ud.sy || 1)));
       const along = rv.x * ax.x + rv.y * ax.y;
-      if (along > (d.thr || 4) && along / sp > 0.55) {
+      const held = typeof Input !== 'undefined' && Input.isHeld(b);
+      if (along > (d.thr || 4) * (held ? 0.45 : 1) && along / sp > 0.55) {
         if (oud.part) {
           const dm = (along - 2) * (d.stab || 4) * massF * 0.6;
           oud.ent.stabHit(oud.part, p, ax, dm);
@@ -110,7 +128,10 @@ const Combat = (() => {
       enableLimit: true, lowerTranslation: -0.045, upperTranslation: d.depth,
       enableMotor: true, maxMotorForce: d.friction || 600, motorSpeed: 0, collideConnected: false,
     }, tb, wb, p, ax));
-    const rec = { j, wb, tb, d, t: G.time, part: tb.getUserData().part };
+    const rec = { j, wb, tb, d, t: G.time, part: tb.getUserData().part, depth: 0, exited: false };
+    let tfx = null; for (let f = tb.getFixtureList(); f; f = f.getNext()) if (!f.isSensor()) { tfx = f; break; }
+    const ex = tfx ? exitPoint(tfx, p, ax, 1.2) : null;
+    rec.thick = ex ? Math.max(0.04, ex.len) : 0.25;
     if (rec.part) {
       const lp = tb.getLocalPoint(p);
       rec.w = rec.part.wounds[rec.part.wounds.length - 1];
@@ -119,12 +140,15 @@ const Combat = (() => {
     wud.impales.push(rec);
     impales.push(rec);
   }
+  function a0(r) { return r.j.getAnchorA(); }
+  function ax0(r) { return r.wb.getWorldVector(v2(1, 0)); }
   function unimpale(rec, rip) {
     killJoint(rec.j);
     const wud = rec.wb.getUserData();
     if (wud && wud.impales) wud.impales = wud.impales.filter((r) => r !== rec);
     const i = impales.indexOf(rec); if (i >= 0) impales.splice(i, 1);
     if (rec.w) { rec.w.plug = false; rec.w.bleed += rip ? 1.5 : 0.8; }
+    if (rec.w2) { rec.w2.plug = false; rec.w2.bleed += 0.8; }
     if (!rec.wb._dead && !rec.tb._dead) noCollide(rec.wb, rec.tb, 0.35);
     if (rec.part && !rec.tb._dead) {
       const pt = rec.wb.getWorldPoint(v2(0, 0));
@@ -359,6 +383,30 @@ const Combat = (() => {
       if (r.j._dead || r.wb._dead || r.tb._dead) { impales.splice(i, 1); const wud = r.wb.getUserData(); if (wud && wud.impales) wud.impales = wud.impales.filter((q) => q !== r); continue; }
       const t = r.j.getJointTranslation();
       if (t < -0.035 && G.time - r.t > 0.05) { unimpale(r, false); continue; }
+      if (t > r.depth + 0.015) {
+        // the blade is being driven deeper: tissue damage scales with distance travelled
+        const dd = t - r.depth;
+        r.depth = t;
+        if (r.part) {
+          const dm = r.part.dummy || r.tb.getUserData().ent;
+          dm.hurt(r.part, dd * 90, 'stab');
+          if (r.w) r.w.bleed = Math.min(r.w.bleed + dd * 6, 6);
+          if (!r.exited && t > r.thick + 0.02) {
+            r.exited = true;
+            const ax = r.wb.getWorldVector(v2(r.d.ax != null ? r.d.ax : 1, (r.d.ay || 0) * (r.wb.getUserData().sy || 1)));
+            const a = r.j.getAnchorA();
+            const out = v2(a.x + ax.x * r.thick, a.y + ax.y * r.thick);
+            const w = dm.addWound(r.part, out, ax, 0.024, 1.4, 'exit');
+            if (w) w.plug = true;
+            r.w2 = w;
+            bloodSpray(out.x, out.y, ax.x, ax.y, 16, 3.2, 0.5, 1.2);
+            dm.log('Run through · ' + r.part.label);
+            if (r.part.n === 'head') dm.brain = -50;
+            if (r.part.n === 'chest' && Math.random() < 0.35) dm.hurt(r.part, 60, 'stab');
+            Sound.play('stab', 0.9);
+          } else if (Math.random() < dd * 20) bloodSpray(a0(r).x, a0(r).y, -ax0(r).x, -ax0(r).y, 3, 1.5, 0.6);
+        }
+      }
       const F = r.j.getReactionForce(1 / DT);
       const lat = Math.hypot(F.x, F.y);
       if (lat > (r.d.breakF || 9000)) unimpale(r, true);
@@ -370,6 +418,6 @@ const Combat = (() => {
 
   function reset() { impales.length = 0; projectiles.length = 0; firePools.length = 0; burning.clear(); G.lights.length = 0; }
 
-  return { update, onImpact, handleContact, fireBullet, fireBeam, explode, ignite, addFirePool, addProjectile, impale, releaseAll, reset,
+  return { tipWouldImpale, update, onImpact, handleContact, fireBullet, fireBeam, explode, ignite, addFirePool, addProjectile, impale, releaseAll, reset,
     get projectiles() { return projectiles; }, get firePools() { return firePools; }, get impales() { return impales; }, burning };
 })();
