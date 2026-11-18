@@ -286,6 +286,12 @@ const Input = {
       case 'Escape': if (this.placing) UI.setPlacing(null); else if (this.ropeStart) this.ropeStart = null; else G.selected = null; break;
       case 'KeyP': UI.togglePause(); break;
       case 'KeyT': UI.toggleSlow(); break;
+      case 'KeyG': {
+        // spawn a dummy with its feet at the cursor (it drops if the cursor is in mid-air)
+        new Dummy(this.wx, Math.max(0, this.wy), this.placeFlip ? -1 : 1);
+        Sound.play('spawn', 0.5);
+        break;
+      }
       case 'KeyL': UI.toggleLife(); break;
       case 'KeyH': UI.toggleHelp(); break;
       case 'KeyC': UI.clearDebris(); break;
@@ -352,11 +358,18 @@ const Input = {
     }
   },
   drawScreenOverlay(ctx) {
-    if (G.paused) {
+    const label = G.paused ? 'PAUSED' : G.slowmo ? 'SLOW MOTION  0.25×' : null;
+    if (label) {
       ctx.fillStyle = 'rgba(242,194,48,0.9)';
       ctx.font = '600 13px "Chakra Petch", system-ui, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('PAUSED', R.W / 2, 74);
+      ctx.fillText(label, R.W / 2, 74);
+    }
+    if (G.slowmo && !G.paused) {
+      // tinted frame so slow motion is obvious at a glance
+      ctx.strokeStyle = 'rgba(242,194,48,0.35)';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(1.5, 1.5, R.W - 3, R.H - 3);
     }
   },
 };

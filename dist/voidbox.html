@@ -179,7 +179,9 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
           <div class="row"><span>Inspect a dummy</span><span>Right-click it</span></div>
           <div class="row"><span>Delete under cursor</span><span><kbd>X</kbd> / <kbd>Del</kbd></span></div>
           <div class="row"><span>Tools</span><span><kbd>1</kbd>–<kbd>7</kbd></span></div>
-          <div class="row"><span>Pause / slow motion</span><span><kbd>P</kbd> / <kbd>T</kbd></span></div>
+          <div class="row"><span>Pause</span><span><kbd>P</kbd></span></div>
+          <div class="row"><span>Slow motion on / off</span><span><kbd>T</kbd></span></div>
+          <div class="row"><span>Spawn a dummy at the cursor</span><span><kbd>G</kbd></span></div>
           <div class="row"><span>Health overlay</span><span><kbd>L</kbd></span></div>
           <div class="row"><span>Clear blood &amp; debris</span><span><kbd>C</kbd></span></div>
         </div>
@@ -4264,6 +4266,12 @@ const Input = {
       case 'Escape': if (this.placing) UI.setPlacing(null); else if (this.ropeStart) this.ropeStart = null; else G.selected = null; break;
       case 'KeyP': UI.togglePause(); break;
       case 'KeyT': UI.toggleSlow(); break;
+      case 'KeyG': {
+        // spawn a dummy with its feet at the cursor (it drops if the cursor is in mid-air)
+        new Dummy(this.wx, Math.max(0, this.wy), this.placeFlip ? -1 : 1);
+        Sound.play('spawn', 0.5);
+        break;
+      }
       case 'KeyL': UI.toggleLife(); break;
       case 'KeyH': UI.toggleHelp(); break;
       case 'KeyC': UI.clearDebris(); break;
@@ -4330,11 +4338,18 @@ const Input = {
     }
   },
   drawScreenOverlay(ctx) {
-    if (G.paused) {
+    const label = G.paused ? 'PAUSED' : G.slowmo ? 'SLOW MOTION  0.25×' : null;
+    if (label) {
       ctx.fillStyle = 'rgba(242,194,48,0.9)';
       ctx.font = '600 13px "Chakra Petch", system-ui, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('PAUSED', R.W / 2, 74);
+      ctx.fillText(label, R.W / 2, 74);
+    }
+    if (G.slowmo && !G.paused) {
+      // tinted frame so slow motion is obvious at a glance
+      ctx.strokeStyle = 'rgba(242,194,48,0.35)';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(1.5, 1.5, R.W - 3, R.H - 3);
     }
   },
 };
