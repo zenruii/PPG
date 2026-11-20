@@ -189,6 +189,7 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
           <div class="row"><span>Drive a tank</span><span>Right-click it, <kbd>A</kbd><kbd>D</kbd> drive</span></div>
           <div class="row"><span>Aim / fire the tank gun</span><span><kbd>W</kbd><kbd>S</kbd> / <kbd>Space</kbd>, <kbd>Esc</kbd> get out</span></div>
           <div class="row"><span>Health overlay</span><span><kbd>L</kbd></span></div>
+          <div class="row"><span>Light / dark background</span><span><kbd>B</kbd></span></div>
           <div class="row"><span>Clear blood &amp; debris</span><span><kbd>C</kbd></span></div>
         </div>
         <div class="foot"><small>Automatic weapons fire while <kbd>Space</kbd> or the right button is held.</small><button id="help-close" type="button">Got it</button></div>
@@ -265,7 +266,7 @@ const G = {
   nextId: 1, groupCounter: 1, shake: 0,
   lifeView: false, selected: null, hover: null,
   stainBodies: new Set(),
-  ropes: [], pins: [], vehicle: null,
+  ropes: [], pins: [], vehicle: null, theme: 'dark',
 };
 
 function defer(fn, delay = 0) { G.deferred.push({ t: G.time + delay, fn }); }
@@ -811,6 +812,23 @@ const Sound = (() => {
 const Cam = { x: 0, y: 3, z: 70, tx: 0, ty: 3, tz: 70 };
 const R = { cv: null, ctx: null, W: 0, H: 0, dpr: 1, frameLights: [], sprites: {} };
 
+/* play-area backgrounds: the black void, or a light lab grey that is easier to see on */
+const THEMES = {
+  dark: { bg: '#030405', haze: 'rgba(30,34,44,', hazeA: 0.28, ground: '#0d0e11', groundTop: '#1c1e23', groundFade: 'rgba(13,14,17,0)', line: '#3a3d45',
+    tick: 'rgba(120,126,140,0.25)', ruler: 'rgba(120,126,140,0.45)', hole: '#060607', blend: 'lighter', lights: 1, tracer: null,
+    label: 'rgba(242,194,48,0.9)', frame: 'rgba(242,194,48,0.35)' },
+  light: { bg: '#dde1e6', haze: 'rgba(255,255,255,', hazeA: 0.55, ground: '#8d939b', groundTop: '#a9afb7', groundFade: 'rgba(141,147,155,0)', line: '#4a5059',
+    tick: 'rgba(30,34,42,0.35)', ruler: 'rgba(30,34,42,0.6)', hole: '#2a2c30', blend: 'source-over', lights: 0.3, tracer: '176,112,24',
+    label: 'rgba(140,96,0,0.95)', frame: 'rgba(170,120,0,0.55)' },
+};
+let THEME = THEMES.dark;
+function setTheme(name) {
+  THEME = THEMES[name] || THEMES.dark;
+  G.theme = THEMES[name] ? name : 'dark';
+  try { localStorage.setItem('voidbox.theme', G.theme); } catch (e) {}
+}
+try { const t = localStorage.getItem('voidbox.theme'); if (t && THEMES[t]) { THEME = THEMES[t]; G.theme = t; } } catch (e) {}
+
 function roundRectPath(ctx, x, y, w, h, r) {
   let tl, tr, br, bl;
   if (Array.isArray(r)) [tl, tr, br, bl] = r; else tl = tr = br = bl = r;
@@ -962,12 +980,12 @@ function render(frameDt) {
   Cam.y += (Cam.ty - Cam.y) * Math.min(1, frameDt * 14);
   Cam.z += (Cam.tz - Cam.z) * Math.min(1, frameDt * 14);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.fillStyle = '#030405';
+  ctx.fillStyle = THEME.bg;
   ctx.fillRect(0, 0, W, H);
   // horizon haze
   const hz = worldToScreen(0, 0).y;
   const hg = ctx.createLinearGradient(0, hz - H * 0.6, 0, hz);
-  hg.addColorStop(0, 'rgba(30,34,44,0)'); hg.addColorStop(1, 'rgba(30,34,44,0.28)');
+  hg.addColorStop(0, THEME.haze + '0)'); hg.addColorStop(1, THEME.haze + THEME.hazeA + ')');
   ctx.fillStyle = hg; ctx.fillRect(0, Math.max(0, hz - H * 0.6), W, Math.min(H, H * 0.6));
 
   let sx = 0, sy = 0;
@@ -988,10 +1006,10 @@ function render(frameDt) {
   drawTracers(ctx);
   Input.drawOverlay(ctx);
 
-  // additive lights
-  ctx.globalCompositeOperation = 'lighter';
-  for (const l of G.lights) glow(ctx, l.x, l.y, l.r, l.col, l.a * (l.life / l.max));
-  for (const l of R.frameLights) glow(ctx, l.x, l.y, l.r, l.col, l.a);
+  // lights add up on the dark void; on the light background they are toned down
+  ctx.globalCompositeOperation = THEME.blend;
+  for (const l of G.lights) glow(ctx, l.x, l.y, l.r, l.col, l.a * (l.life / l.max) * THEME.lights);
+  for (const l of R.frameLights) glow(ctx, l.x, l.y, l.r, l.col, l.a * THEME.lights);
   drawGlowParticles(ctx);
   ctx.globalCompositeOperation = 'source-over';
 
@@ -1003,14 +1021,14 @@ function render(frameDt) {
 
 function drawGround(ctx, v) {
   const x0 = Math.max(v.x0, -600), x1 = Math.min(v.x1, 600);
-  ctx.fillStyle = '#0d0e11';
+  ctx.fillStyle = THEME.ground;
   ctx.fillRect(x0, -30, x1 - x0, 30);
   const g = ctx.createLinearGradient(0, 0, 0, -1.2);
-  g.addColorStop(0, '#1c1e23'); g.addColorStop(1, 'rgba(13,14,17,0)');
+  g.addColorStop(0, THEME.groundTop); g.addColorStop(1, THEME.groundFade);
   ctx.fillStyle = g; ctx.fillRect(x0, -1.2, x1 - x0, 1.2);
-  line(ctx, x0, 0, x1, 0, '#3a3d45', 2 / Cam.z);
+  line(ctx, x0, 0, x1, 0, THEME.line, 2 / Cam.z);
   // tick marks
-  ctx.strokeStyle = 'rgba(120,126,140,0.25)'; ctx.lineWidth = 1 / Cam.z;
+  ctx.strokeStyle = THEME.tick; ctx.lineWidth = 1 / Cam.z;
   ctx.beginPath();
   for (let x = Math.ceil(x0); x <= x1; x++) {
     const h = x % 5 === 0 ? 0.16 : 0.06;
@@ -1021,7 +1039,7 @@ function drawGround(ctx, v) {
   const st = G.ground.getUserData().stains;
   for (const s of st) {
     if (s.x < x0 - 1 || s.x > x1 + 1) continue;
-    if (s.hole) { ctx.fillStyle = '#060607'; ctx.fillRect(s.x - s.r, -s.r * 2, s.r * 2, s.r * 2); continue; }
+    if (s.hole) { ctx.fillStyle = THEME.hole; ctx.fillRect(s.x - s.r, -s.r * 2, s.r * 2, s.r * 2); continue; }
     ctx.fillStyle = s.c;
     ctx.beginPath(); ctx.ellipse(s.x, 0.004, s.r * 1.7, Math.min(s.r * 0.25, 0.03), 0, 0, TAU); ctx.fill();
   }
@@ -1029,7 +1047,7 @@ function drawGround(ctx, v) {
 
 function drawRuler(ctx, v) {
   if (Cam.z < 25) return;
-  ctx.fillStyle = 'rgba(120,126,140,0.45)';
+  ctx.fillStyle = THEME.ruler;
   ctx.font = '10px "IBM Plex Mono", ui-monospace, monospace';
   ctx.textAlign = 'center';
   for (let x = Math.ceil(v.x0 / 5) * 5; x <= v.x1; x += 5) {
@@ -1120,7 +1138,7 @@ function drawGlowParticles(ctx) {
   }
 }
 function drawProjectiles(ctx) {
-  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalCompositeOperation = THEME.blend;
   for (const p of Combat.projectiles) {
     const l = Math.hypot(p.vx, p.vy) || 1;
     ctx.strokeStyle = `rgba(${p.col},0.9)`; ctx.lineWidth = p.size * 0.8; ctx.lineCap = 'round';
@@ -1131,11 +1149,11 @@ function drawProjectiles(ctx) {
   ctx.globalCompositeOperation = 'source-over';
 }
 function drawTracers(ctx) {
-  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalCompositeOperation = THEME.blend;
   ctx.lineCap = 'round';
   for (const t of G.tracers) {
     const k = t.life / t.max;
-    ctx.strokeStyle = `rgba(${t.col},${0.85 * k})`; ctx.lineWidth = t.w;
+    ctx.strokeStyle = `rgba(${THEME.tracer || t.col},${0.85 * k})`; ctx.lineWidth = t.w;
     ctx.beginPath(); ctx.moveTo(lerp(t.x2, t.x1, k), lerp(t.y2, t.y1, k)); ctx.lineTo(t.x2, t.y2); ctx.stroke();
   }
   for (const b of G.beams) {
@@ -3382,7 +3400,7 @@ function energyBlade(id, name, desc, col, segs, drawHilt, drawBlade) {
     lightFx(it) { if (it.st.ext > 0) { const c = it.wp(0.45, 0); addLight(c.x, c.y, 1.4, col, 0.32 * it.st.ext); } },
     draw(ctx, it) {
       const e = it.st.ext != null ? it.st.ext : 1;
-      if (e > 0) { ctx.globalCompositeOperation = 'lighter'; drawBlade(ctx, e); ctx.globalCompositeOperation = 'source-over'; }
+      if (e > 0) { ctx.globalCompositeOperation = THEME.blend; drawBlade(ctx, e); ctx.globalCompositeOperation = 'source-over'; }
       drawHilt(ctx);
     },
     icon(ctx, it) { it.st.ext = 1; this.draw(ctx, it); },
@@ -3662,7 +3680,7 @@ class Singularity extends Entity {
   draw(ctx) {
     const s = Math.min(1, this.t / 0.5) * (this.t > 4.6 ? Math.max(0.05, (5 - this.t) / 0.4) : 1);
     ctx.save(); ctx.translate(this.x, this.y);
-    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalCompositeOperation = THEME.blend;
     glow(ctx, 0, 0, 2.6 * s, '120,60,200', 0.5);
     ctx.globalCompositeOperation = 'source-over';
     for (let i = 0; i < 3; i++) {
@@ -5162,6 +5180,7 @@ const Input = {
         break;
       }
       case 'KeyL': UI.toggleLife(); break;
+      case 'KeyB': UI.toggleTheme(); break;
       case 'KeyH': UI.toggleHelp(); break;
       case 'KeyC': UI.clearDebris(); break;
       case 'Delete': case 'Backspace': case 'KeyX': {
@@ -5235,14 +5254,14 @@ const Input = {
   drawScreenOverlay(ctx) {
     const label = G.paused ? 'PAUSED' : G.slowmo ? 'SLOW MOTION  0.25×' : null;
     if (label) {
-      ctx.fillStyle = 'rgba(242,194,48,0.9)';
+      ctx.fillStyle = THEME.label;
       ctx.font = '600 13px "Chakra Petch", system-ui, sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText(label, R.W / 2, 74);
     }
     if (G.slowmo && !G.paused) {
       // tinted frame so slow motion is obvious at a glance
-      ctx.strokeStyle = 'rgba(242,194,48,0.35)';
+      ctx.strokeStyle = THEME.frame;
       ctx.lineWidth = 3;
       ctx.strokeRect(1.5, 1.5, R.W - 3, R.H - 3);
     }
@@ -5269,6 +5288,8 @@ const ICONS = {
   help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7M12 17h0"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
   menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  moon: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
 };
 const svg = (n) => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[n]}</svg>`;
 
@@ -5298,7 +5319,7 @@ const UI = {
     }
     const simBtns = [
       ['pause', 'Pause (P)', () => this.togglePause()], ['slow', 'Slow motion (T)', () => this.toggleSlow()],
-      ['life', 'Health overlay (L)', () => this.toggleLife()], ['sound', 'Sound', () => this.toggleSound()],
+      ['life', 'Health overlay (L)', () => this.toggleLife()], ['theme', 'Light / dark background (B)', () => this.toggleTheme()], ['sound', 'Sound', () => this.toggleSound()],
       ['broom', 'Clear blood & debris (C)', () => this.clearDebris()], ['reset', 'Reset scene', () => this.confirmReset()],
       ['help', 'Controls (H)', () => this.toggleHelp()],
     ];
@@ -5376,6 +5397,7 @@ const UI = {
   togglePause() { G.paused = !G.paused; this.syncSim(); },
   toggleSlow() { G.slowmo = !G.slowmo; this.syncSim(); },
   toggleLife() { G.lifeView = !G.lifeView; this.syncSim(); },
+  toggleTheme() { setTheme(G.theme === 'light' ? 'dark' : 'light'); this.syncSim(); },
   toggleSound() { Sound.init(); Sound.enabled = !Sound.enabled; this.syncSim(); },
   toggleHelp(v) { const h = this.el.help; h.hidden = v === undefined ? !h.hidden : !v; },
   clearDebris() {
@@ -5395,6 +5417,7 @@ const UI = {
     const p = q('pause'); p.innerHTML = svg(G.paused ? 'play' : 'pause'); p.classList.toggle('on', G.paused);
     q('slow').classList.toggle('on', G.slowmo);
     q('life').classList.toggle('on', G.lifeView);
+    const th = q('theme'); th.innerHTML = svg(G.theme === 'light' ? 'moon' : 'sun'); th.title = G.theme === 'light' ? 'Dark background (B)' : 'Light background (B)'; th.setAttribute('aria-label', th.title);
     const s = q('sound'); s.innerHTML = svg(Sound.enabled ? 'sound' : 'mute'); s.classList.toggle('on', !Sound.enabled);
   },
 

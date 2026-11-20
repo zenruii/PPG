@@ -5,6 +5,23 @@
 const Cam = { x: 0, y: 3, z: 70, tx: 0, ty: 3, tz: 70 };
 const R = { cv: null, ctx: null, W: 0, H: 0, dpr: 1, frameLights: [], sprites: {} };
 
+/* play-area backgrounds: the black void, or a light lab grey that is easier to see on */
+const THEMES = {
+  dark: { bg: '#030405', haze: 'rgba(30,34,44,', hazeA: 0.28, ground: '#0d0e11', groundTop: '#1c1e23', groundFade: 'rgba(13,14,17,0)', line: '#3a3d45',
+    tick: 'rgba(120,126,140,0.25)', ruler: 'rgba(120,126,140,0.45)', hole: '#060607', blend: 'lighter', lights: 1, tracer: null,
+    label: 'rgba(242,194,48,0.9)', frame: 'rgba(242,194,48,0.35)' },
+  light: { bg: '#dde1e6', haze: 'rgba(255,255,255,', hazeA: 0.55, ground: '#8d939b', groundTop: '#a9afb7', groundFade: 'rgba(141,147,155,0)', line: '#4a5059',
+    tick: 'rgba(30,34,42,0.35)', ruler: 'rgba(30,34,42,0.6)', hole: '#2a2c30', blend: 'source-over', lights: 0.3, tracer: '176,112,24',
+    label: 'rgba(140,96,0,0.95)', frame: 'rgba(170,120,0,0.55)' },
+};
+let THEME = THEMES.dark;
+function setTheme(name) {
+  THEME = THEMES[name] || THEMES.dark;
+  G.theme = THEMES[name] ? name : 'dark';
+  try { localStorage.setItem('voidbox.theme', G.theme); } catch (e) {}
+}
+try { const t = localStorage.getItem('voidbox.theme'); if (t && THEMES[t]) { THEME = THEMES[t]; G.theme = t; } } catch (e) {}
+
 function roundRectPath(ctx, x, y, w, h, r) {
   let tl, tr, br, bl;
   if (Array.isArray(r)) [tl, tr, br, bl] = r; else tl = tr = br = bl = r;
@@ -156,12 +173,12 @@ function render(frameDt) {
   Cam.y += (Cam.ty - Cam.y) * Math.min(1, frameDt * 14);
   Cam.z += (Cam.tz - Cam.z) * Math.min(1, frameDt * 14);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.fillStyle = '#030405';
+  ctx.fillStyle = THEME.bg;
   ctx.fillRect(0, 0, W, H);
   // horizon haze
   const hz = worldToScreen(0, 0).y;
   const hg = ctx.createLinearGradient(0, hz - H * 0.6, 0, hz);
-  hg.addColorStop(0, 'rgba(30,34,44,0)'); hg.addColorStop(1, 'rgba(30,34,44,0.28)');
+  hg.addColorStop(0, THEME.haze + '0)'); hg.addColorStop(1, THEME.haze + THEME.hazeA + ')');
   ctx.fillStyle = hg; ctx.fillRect(0, Math.max(0, hz - H * 0.6), W, Math.min(H, H * 0.6));
 
   let sx = 0, sy = 0;
@@ -182,10 +199,10 @@ function render(frameDt) {
   drawTracers(ctx);
   Input.drawOverlay(ctx);
 
-  // additive lights
-  ctx.globalCompositeOperation = 'lighter';
-  for (const l of G.lights) glow(ctx, l.x, l.y, l.r, l.col, l.a * (l.life / l.max));
-  for (const l of R.frameLights) glow(ctx, l.x, l.y, l.r, l.col, l.a);
+  // lights add up on the dark void; on the light background they are toned down
+  ctx.globalCompositeOperation = THEME.blend;
+  for (const l of G.lights) glow(ctx, l.x, l.y, l.r, l.col, l.a * (l.life / l.max) * THEME.lights);
+  for (const l of R.frameLights) glow(ctx, l.x, l.y, l.r, l.col, l.a * THEME.lights);
   drawGlowParticles(ctx);
   ctx.globalCompositeOperation = 'source-over';
 
@@ -197,14 +214,14 @@ function render(frameDt) {
 
 function drawGround(ctx, v) {
   const x0 = Math.max(v.x0, -600), x1 = Math.min(v.x1, 600);
-  ctx.fillStyle = '#0d0e11';
+  ctx.fillStyle = THEME.ground;
   ctx.fillRect(x0, -30, x1 - x0, 30);
   const g = ctx.createLinearGradient(0, 0, 0, -1.2);
-  g.addColorStop(0, '#1c1e23'); g.addColorStop(1, 'rgba(13,14,17,0)');
+  g.addColorStop(0, THEME.groundTop); g.addColorStop(1, THEME.groundFade);
   ctx.fillStyle = g; ctx.fillRect(x0, -1.2, x1 - x0, 1.2);
-  line(ctx, x0, 0, x1, 0, '#3a3d45', 2 / Cam.z);
+  line(ctx, x0, 0, x1, 0, THEME.line, 2 / Cam.z);
   // tick marks
-  ctx.strokeStyle = 'rgba(120,126,140,0.25)'; ctx.lineWidth = 1 / Cam.z;
+  ctx.strokeStyle = THEME.tick; ctx.lineWidth = 1 / Cam.z;
   ctx.beginPath();
   for (let x = Math.ceil(x0); x <= x1; x++) {
     const h = x % 5 === 0 ? 0.16 : 0.06;
@@ -215,7 +232,7 @@ function drawGround(ctx, v) {
   const st = G.ground.getUserData().stains;
   for (const s of st) {
     if (s.x < x0 - 1 || s.x > x1 + 1) continue;
-    if (s.hole) { ctx.fillStyle = '#060607'; ctx.fillRect(s.x - s.r, -s.r * 2, s.r * 2, s.r * 2); continue; }
+    if (s.hole) { ctx.fillStyle = THEME.hole; ctx.fillRect(s.x - s.r, -s.r * 2, s.r * 2, s.r * 2); continue; }
     ctx.fillStyle = s.c;
     ctx.beginPath(); ctx.ellipse(s.x, 0.004, s.r * 1.7, Math.min(s.r * 0.25, 0.03), 0, 0, TAU); ctx.fill();
   }
@@ -223,7 +240,7 @@ function drawGround(ctx, v) {
 
 function drawRuler(ctx, v) {
   if (Cam.z < 25) return;
-  ctx.fillStyle = 'rgba(120,126,140,0.45)';
+  ctx.fillStyle = THEME.ruler;
   ctx.font = '10px "IBM Plex Mono", ui-monospace, monospace';
   ctx.textAlign = 'center';
   for (let x = Math.ceil(v.x0 / 5) * 5; x <= v.x1; x += 5) {
@@ -314,7 +331,7 @@ function drawGlowParticles(ctx) {
   }
 }
 function drawProjectiles(ctx) {
-  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalCompositeOperation = THEME.blend;
   for (const p of Combat.projectiles) {
     const l = Math.hypot(p.vx, p.vy) || 1;
     ctx.strokeStyle = `rgba(${p.col},0.9)`; ctx.lineWidth = p.size * 0.8; ctx.lineCap = 'round';
@@ -325,11 +342,11 @@ function drawProjectiles(ctx) {
   ctx.globalCompositeOperation = 'source-over';
 }
 function drawTracers(ctx) {
-  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalCompositeOperation = THEME.blend;
   ctx.lineCap = 'round';
   for (const t of G.tracers) {
     const k = t.life / t.max;
-    ctx.strokeStyle = `rgba(${t.col},${0.85 * k})`; ctx.lineWidth = t.w;
+    ctx.strokeStyle = `rgba(${THEME.tracer || t.col},${0.85 * k})`; ctx.lineWidth = t.w;
     ctx.beginPath(); ctx.moveTo(lerp(t.x2, t.x1, k), lerp(t.y2, t.y1, k)); ctx.lineTo(t.x2, t.y2); ctx.stroke();
   }
   for (const b of G.beams) {

@@ -22,6 +22,7 @@ Runs entirely in the browser. No build step needed to play.
 | Place several copies | `Shift` + click |
 | Tools: Grab, Pin, Rope, Explode, Ignite, Heal, Delete | `1` to `7` |
 | Pause, slow motion, health overlay | `P`, `T`, `L` |
+| Light or dark background (remembered between visits) | `B` |
 | Spawn a dummy at the cursor | `G` |
 | Spawn the last item you picked from the catalog again | `R` |
 | Drive a tank | Right-click it, then `A` `D` drive, `W` `S` aim the gun, `Space` fire, `Esc` get out |

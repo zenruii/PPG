@@ -668,7 +668,7 @@ function energyBlade(id, name, desc, col, segs, drawHilt, drawBlade) {
     lightFx(it) { if (it.st.ext > 0) { const c = it.wp(0.45, 0); addLight(c.x, c.y, 1.4, col, 0.32 * it.st.ext); } },
     draw(ctx, it) {
       const e = it.st.ext != null ? it.st.ext : 1;
-      if (e > 0) { ctx.globalCompositeOperation = 'lighter'; drawBlade(ctx, e); ctx.globalCompositeOperation = 'source-over'; }
+      if (e > 0) { ctx.globalCompositeOperation = THEME.blend; drawBlade(ctx, e); ctx.globalCompositeOperation = 'source-over'; }
       drawHilt(ctx);
     },
     icon(ctx, it) { it.st.ext = 1; this.draw(ctx, it); },
@@ -948,7 +948,7 @@ class Singularity extends Entity {
   draw(ctx) {
     const s = Math.min(1, this.t / 0.5) * (this.t > 4.6 ? Math.max(0.05, (5 - this.t) / 0.4) : 1);
     ctx.save(); ctx.translate(this.x, this.y);
-    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalCompositeOperation = THEME.blend;
     glow(ctx, 0, 0, 2.6 * s, '120,60,200', 0.5);
     ctx.globalCompositeOperation = 'source-over';
     for (let i = 0; i < 3; i++) {

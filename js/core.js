@@ -42,7 +42,7 @@ const G = {
   nextId: 1, groupCounter: 1, shake: 0,
   lifeView: false, selected: null, hover: null,
   stainBodies: new Set(),
-  ropes: [], pins: [], vehicle: null,
+  ropes: [], pins: [], vehicle: null, theme: 'dark',
 };
 
 function defer(fn, delay = 0) { G.deferred.push({ t: G.time + delay, fn }); }
